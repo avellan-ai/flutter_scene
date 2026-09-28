@@ -1,0 +1,31 @@
+name: flutter_scene_riglogic
+description: MetaHuman-compatible facial rig evaluation for flutter_scene. Runs Epic's OpenRigLogic (RigLogic and DNA, MIT) natively through dart:ffi and on the web as WebAssembly.
+repository: https://github.com/bdero/flutter_scene
+homepage: https://github.com/bdero/flutter_scene
+version: 0.1.0
+publish_to: none
+
+platforms:
+  linux:
+  macos:
+  windows:
+  android:
+  web:
+
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  code_assets: '>=1.2.0 <3.0.0'
+  flutter:
+    sdk: flutter
+  flutter_scene: ^0.23.0
+  hooks: ^2.0.0
+  vector_math: ^2.1.4
+  web: ^1.1.0
+
+dev_dependencies:
+  test: ^1.25.0

@@ -1,0 +1,4 @@
+[submodule "packages/flutter_scene_riglogic/third_party/OpenRigLogic"]
+	path = packages/flutter_scene_riglogic/third_party/OpenRigLogic
+	url = https://github.com/EpicGames/OpenRigLogic.git
+	branch = 5.8
