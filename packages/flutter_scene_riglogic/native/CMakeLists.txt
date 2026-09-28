@@ -58,3 +58,10 @@ endif()
 target_compile_features(flutter_scene_riglogic_native PRIVATE cxx_std_14)
 target_link_libraries(flutter_scene_riglogic_native PRIVATE RigLogic::riglogic4)
 
+# Synthetic DNA writer for test fixtures and benchmarks (not part of the
+# shipped library): cmake --build <dir> --target make_dna
+if(NOT EMSCRIPTEN)
+  add_executable(make_dna EXCLUDE_FROM_ALL tools/make_dna.cpp)
+  target_compile_features(make_dna PRIVATE cxx_std_17)
+  target_link_libraries(make_dna PRIVATE RigLogic::riglogic4)
+endif()
