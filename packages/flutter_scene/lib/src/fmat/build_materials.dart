@@ -6,7 +6,7 @@ import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart'
-    show discoveryDependencyDirectory;
+    show discoverSources;
 
 import '../generated_assets/engine_identity.dart' show engineIdentity;
 import '../generated_assets/generated_assets.dart';
@@ -79,26 +79,13 @@ String fmatFlutterAssetKeyFor({
 List<String> discoverFmatMaterials(
   Uri packageRoot, {
   String discoveryRoot = 'assets/',
-}) {
-  final dir = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
-  final searchDirectory = Directory.fromUri(packageRoot.resolve(dir));
-  if (!searchDirectory.existsSync()) {
-    return const [];
-  }
-  final rootPath = packageRoot.toFilePath(windows: false);
-  final materials =
-      searchDirectory
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .where((file) => file.path.endsWith('.fmat'))
-          .map((file) {
-            final path = file.uri.toFilePath(windows: false);
-            return path.substring(rootPath.length);
-          })
-          .toList()
-        ..sort();
-  return materials;
-}
+}) => discoverSources(
+  packageRoot,
+  discoveryRoot: discoveryRoot,
+  extensions: _fmatExtensions,
+).sources;
+
+const List<String> _fmatExtensions = ['.fmat'];
 
 /// The framework GLSL files (in flutter_scene's `shaders/` directory) that a
 /// generated material shader can `#include`. Declared as build dependencies so
@@ -267,15 +254,17 @@ Future<void> _buildMaterials({
   // Sources come from the owning package, outputs go to the building package.
   final materialRoot = sourceRoot ?? packageRoot;
   final assetOwner = owner ?? buildInput.packageName;
-  final materialPaths =
-      materials ??
-      discoverFmatMaterials(materialRoot, discoveryRoot: discoveryRoot);
-  if (materials == null) {
-    // Hashed as the names of its direct children, so an added or removed
-    // material reruns the hook for nothing.
-    buildOutput.dependencies.add(
-      discoveryDependencyDirectory(materialRoot, discoveryRoot),
+  var materialPaths = materials;
+  if (materialPaths == null) {
+    final discovered = discoverSources(
+      materialRoot,
+      discoveryRoot: discoveryRoot,
+      extensions: _fmatExtensions,
     );
+    materialPaths = discovered.sources;
+    // Hashed as the names of their direct children, so an added or removed
+    // material at any depth reruns the hook for nothing.
+    buildOutput.dependencies.addAll(discovered.directories);
   }
   if (materialPaths.isEmpty) {
     return;

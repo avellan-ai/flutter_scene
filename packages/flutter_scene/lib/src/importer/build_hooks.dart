@@ -57,31 +57,45 @@ String sceneDataAssetName(String relativeScenePath) =>
 /// `.fsceneb` (an editor's imported assets, registered as-is).
 const List<String> _sceneSourceExtensions = ['.glb', '.fscene', '.fsceneb'];
 
-/// Discovers scene source files (`.glb`/`.fscene`/`.fsceneb`) below
-/// [discoveryRoot] (default `assets/`, relative to [packageRoot]), returned as
-/// paths relative to [packageRoot] in stable (sorted) order.
-List<String> discoverSceneSources(
+/// Discovers the files below [discoveryRoot] (relative to [packageRoot]) whose
+/// path ends with one of [extensions], returned as `sources`: paths relative to
+/// [packageRoot] in stable (sorted) order.
+///
+/// Also returns the `directories` a hook declares so that a source added
+/// anywhere below [discoveryRoot] reruns it. The build system hashes a
+/// directory dependency as the names of its direct children, so the root alone
+/// would miss a source added to an existing subdirectory. Every subdirectory
+/// the same listing walks is declared too, which costs the build system one
+/// name listing per directory and reads no file contents.
+({List<String> sources, List<Uri> directories}) discoverSources(
   Uri packageRoot, {
-  String discoveryRoot = 'assets/',
+  required String discoveryRoot,
+  required List<String> extensions,
 }) {
   final dir = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
-  final searchDirectory = Directory.fromUri(packageRoot.resolve(dir));
-  if (!searchDirectory.existsSync()) {
-    return const [];
+  final rootUri = packageRoot.resolve(dir);
+  if (!Directory.fromUri(rootUri).existsSync()) {
+    return (
+      sources: const [],
+      directories: [discoveryDependencyDirectory(packageRoot, dir)],
+    );
   }
   final rootPath = packageRoot.toFilePath(windows: false);
-  final sources =
-      searchDirectory
-          .listSync(recursive: true, followLinks: false)
-          .whereType<File>()
-          .where((f) => _sceneSourceExtensions.any(f.path.endsWith))
-          .map((file) {
-            final path = file.uri.toFilePath(windows: false);
-            return path.substring(rootPath.length);
-          })
-          .toList()
-        ..sort();
-  return sources;
+  final sources = <String>[];
+  final directories = <Uri>[rootUri];
+  for (final entity in Directory.fromUri(
+    rootUri,
+  ).listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) {
+      directories.add(entity.uri);
+    } else if (entity is File && extensions.any(entity.path.endsWith)) {
+      final path = entity.uri.toFilePath(windows: false);
+      sources.add(path.substring(rootPath.length));
+    }
+  }
+  sources.sort();
+  directories.sort((a, b) => a.path.compareTo(b.path));
+  return (sources: sources, directories: directories);
 }
 
 /// The directory a hook declares to notice sources appearing under
@@ -168,19 +182,17 @@ void buildScenes({
 
   final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
-  final inputs =
-      inputFilePaths ??
-      discoverSceneSources(packageRoot, discoveryRoot: discoveryRoot);
-  if (inputFilePaths == null) {
-    // A directory dependency is hashed as the names of its direct children, so
-    // it costs nothing and catches an added or removed source. Edits are caught
-    // by each source's own declared dependency below.
-    // TODO(hook-dep-cost): the hash covers direct children only, so a source
-    // added in a subdirectory is not seen until something else reruns the hook.
-    // Declaring each subdirectory found during discovery would close that.
-    buildOutput.dependencies.add(
-      discoveryDependencyDirectory(packageRoot, discoveryRoot),
+  var inputs = inputFilePaths;
+  if (inputs == null) {
+    final discovered = discoverSources(
+      packageRoot,
+      discoveryRoot: discoveryRoot,
+      extensions: _sceneSourceExtensions,
     );
+    inputs = discovered.sources;
+    // The discovery directories catch an added or removed source at any depth.
+    // Edits are caught by each source's own declared dependency below.
+    buildOutput.dependencies.addAll(discovered.directories);
   }
 
   if (emitDataAssets) {
