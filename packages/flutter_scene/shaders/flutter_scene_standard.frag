@@ -120,13 +120,19 @@ void main() {
   Surface(material);
   // The surface debug view when one is active, the lit result otherwise, or
   // both selected per pixel for a split (uniform control flow throughout).
+  // Lighting is evaluated at one call site shared by the lit and split views:
+  // two inlined copies crash Apple's GPU shader compiler (macOS 27) once
+  // cascaded shadows and the punctual-light loop are compiled in.
   float debug_mode = DebugViewMode();
+  highp vec4 lit = vec4(0.0);
+  if (debug_mode > 1.5 || !(debug_mode > 0.5)) {
+    lit = EvaluateLighting(material);
+  }
   if (debug_mode > 1.5) {
-    frag_color = DebugViewSplit(DebugSurfaceOutput(material),
-                                EvaluateLighting(material));
+    frag_color = DebugViewSplit(DebugSurfaceOutput(material), lit);
   } else if (debug_mode > 0.5) {
     frag_color = DebugSurfaceOutput(material);
   } else {
-    frag_color = EvaluateLighting(material);
+    frag_color = lit;
   }
 }

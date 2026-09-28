@@ -377,16 +377,23 @@ String emitFragmentGlsl(
 /// is active, the shaded `MaterialOutput` otherwise, or both selected per
 /// pixel for a split. Every branch is under uniform control flow; the split
 /// evaluates both sides and selects, so the lit path never runs under a
-/// per-pixel branch.
+/// per-pixel branch. `MaterialOutput` has one call site shared by the lit and
+/// split views: two inlined copies crash Apple's GPU shader compiler (macOS
+/// 27) once cascaded shadows and the punctual-light loop are compiled in.
 void _writeDebugViewSelect(StringBuffer sb) {
   sb.writeln('  float debug_mode = DebugViewMode();');
+  sb.writeln('  highp vec4 lit = vec4(0.0);');
+  sb.writeln('  if (debug_mode > 1.5 || !(debug_mode > 0.5)) {');
+  sb.writeln('    lit = MaterialOutput(material);');
+  sb.writeln('  }');
   sb.writeln('  if (debug_mode > 1.5) {');
-  sb.writeln('    frag_color = DebugViewSplit(DebugSurfaceOutput(material),');
-  sb.writeln('                                MaterialOutput(material));');
+  sb.writeln(
+    '    frag_color = DebugViewSplit(DebugSurfaceOutput(material), lit);',
+  );
   sb.writeln('  } else if (debug_mode > 0.5) {');
   sb.writeln('    frag_color = DebugSurfaceOutput(material);');
   sb.writeln('  } else {');
-  sb.writeln('    frag_color = MaterialOutput(material);');
+  sb.writeln('    frag_color = lit;');
   sb.writeln('  }');
 }
 
