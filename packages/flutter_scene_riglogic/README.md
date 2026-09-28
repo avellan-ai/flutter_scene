@@ -4,7 +4,30 @@ MetaHuman-compatible facial rigs for [flutter_scene](https://fscene.dev). It loa
 
 It runs natively through `dart:ffi` (a library the build hook compiles from source) and on the web as a standalone WebAssembly module with the same C ABI.
 
-> Status: evaluation only. Loading DNA geometry into flutter_scene meshes, and driving joints, morph targets and wrinkle maps from the outputs, come next.
+> Status: rig evaluation, DNA import (skinned meshes and skeleton) and joint-driven heads work. Morph targets and wrinkle maps are exposed as weights but not yet applied, and flutter_scene skins with four influences per vertex (the converter writes up to twelve, heaviest first).
+
+## A DNA head in a scene
+
+In the app's `hook/build.dart`, next to flutter_scene's `buildScenes`:
+
+```dart
+import 'package:flutter_scene_riglogic/build_hooks.dart';
+
+await buildDnaScenes(buildInput: input, buildOutput: output, lods: [1, 3]);
+```
+
+Every `.dna` under `assets/` becomes a skinned scene (the skeleton in its neutral pose and the meshes of the chosen LODs). List the `.dna` itself as an asset too, then:
+
+```dart
+final head = await RigLogicHead.load('assets/rigs/character.dna');
+head.lod = 1;
+scene.add(head.node);
+head.node.addComponent(RigLogicComponent(head, beforeUpdate: (dt) {
+  head.rig.rawControls[jawOpen] = 0.6; // write controls every frame
+}));
+```
+
+`RigLogicHead` composes RigLogic's joint deltas onto the neutral pose every frame (translation plus delta, rotation neutral times delta, scale plus delta), converted to the engine's axes. The build hook compiles the package's native library for the host with CMake to read the DNA.
 
 ## Use
 
