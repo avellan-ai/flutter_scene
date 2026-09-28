@@ -90,14 +90,25 @@ class MorphedUnskinnedGeometry extends UnskinnedGeometry with _MorphBlending {
 /// into one vertex-stage texture to fit the GLES minimum.
 /// {@category Geometry}
 class MorphedSkinnedGeometry extends SkinnedGeometry with _MorphBlending {
-  /// Creates skinned geometry morphed by [morphTargets].
-  MorphedSkinnedGeometry(MorphTargetData morphTargets) {
+  /// Creates skinned geometry morphed by [morphTargets], with [influences]
+  /// joint influences per vertex (4 or 12, see [SkinnedGeometry.influences]).
+  MorphedSkinnedGeometry(MorphTargetData morphTargets, {super.influences}) {
     _initMorphState(morphTargets);
-    if (usesGpuMorphing) setVertexShaderName('MorphedSkinnedVertex');
+    if (usesGpuMorphing) {
+      setVertexShaderName(
+        influences == kMaxSkinInfluences
+            ? 'MorphedSkinned12Vertex'
+            : 'MorphedSkinnedVertex',
+      );
+    }
   }
 
   @override
-  int get _strideInFloats => kSkinnedPerVertexSize ~/ 4;
+  int get _strideInFloats =>
+      (influences == kMaxSkinInfluences
+          ? kSkinned12PerVertexSize
+          : kSkinnedPerVertexSize) ~/
+      4;
 
   @override
   bool get _skinsAfterMorph => true;

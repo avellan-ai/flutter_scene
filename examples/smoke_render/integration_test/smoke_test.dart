@@ -196,6 +196,47 @@ void main() {
           reason: 'a draw after the full geometry bind kept its depth bias',
         );
       }
+      if (smoke.id == 'skinned_12_influences') {
+        // The runtime and `.fsceneb` imports sit 320 and 160 pixels left of
+        // the CPU-skinned reference. Shifted onto it, each silhouette must
+        // match; a path that keeps four influences draws its copy shoved
+        // aside, a mismatch above 0.9.
+        final bytes = rgba.buffer.asUint8List();
+        bool covered(int x, int y) {
+          final i = (y * image.width + x) * 4;
+          return !((bytes[i] - 0xFF).abs() < 24 &&
+              bytes[i + 1] < 24 &&
+              (bytes[i + 2] - 0xFF).abs() < 24);
+        }
+
+        final slot = image.width * 160 ~/ 512;
+        final referenceLeft = image.width ~/ 2 + slot ~/ 2;
+        for (final (name, shift) in [
+          ('runtime', 2 * slot),
+          ('fsceneb', slot),
+        ]) {
+          var union = 0, overlap = 0;
+          for (var y = 0; y < image.height; y++) {
+            for (var x = referenceLeft; x < referenceLeft + slot; x++) {
+              final reference = covered(x, y);
+              final copy = covered(x - shift, y);
+              if (reference || copy) union++;
+              if (reference && copy) overlap++;
+            }
+          }
+          expect(union, greaterThan(0), reason: 'no skinned tube drew');
+          final mismatch = 1 - overlap / union;
+          // ignore: avoid_print
+          print('SMOKE skinned_12_influences $name mismatch=$mismatch');
+          expect(
+            mismatch,
+            lessThan(0.05),
+            reason:
+                'the $name import does not match the 12-influence CPU '
+                'reference; its skinning dropped influences',
+          );
+        }
+      }
       if (smoke.id == 'irradiance_field') {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe

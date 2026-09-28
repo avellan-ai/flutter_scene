@@ -516,7 +516,9 @@ LocalId _buildGeometry(
   final String vertexLayout;
   if (packed.isSkinned) {
     vertexBytes = packed.vertexBytes;
-    vertexLayout = InterleavedLayoutAdapter.skinnedLayout;
+    vertexLayout = packed.skinInfluences > 4
+        ? InterleavedLayoutAdapter.skinned12Layout
+        : InterleavedLayoutAdapter.skinnedLayout;
   } else if (morph != null) {
     vertexBytes = packed.vertexBytes;
     vertexLayout = InterleavedLayoutAdapter.unskinnedInterleavedLayout;

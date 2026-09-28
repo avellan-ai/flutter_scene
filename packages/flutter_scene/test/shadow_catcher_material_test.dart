@@ -101,6 +101,7 @@ void main() {
       unorderedEquals({
         'ShadowCatcherUnskinnedVertex',
         'ShadowCatcherSkinnedVertex',
+        'ShadowCatcherSkinned12Vertex',
         'ShadowCatcherUnskinnedDepthVertex',
       }),
     );

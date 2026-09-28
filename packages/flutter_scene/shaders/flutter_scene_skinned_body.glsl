@@ -2,6 +2,10 @@
 // skinned vertex variant. Requires VertexInputs and Vertex() to be declared
 // first by including material_vertex.glsl.
 //
+// Defining FLUTTER_SCENE_SKIN_12_INFLUENCES first adds two more joint/weight
+// sets (the 168-byte layout, up to 12 influences per vertex). Without it the
+// body compiles byte-for-byte to the 4-influence shader.
+//
 // The blended skin matrix is applied before Vertex() runs, so vertex.position
 // and vertex.world_position mean the same thing here as in the unskinned body
 // and a material's Vertex() never has to know whether the mesh is skinned.
@@ -35,6 +39,12 @@ in vec4 color;
 in vec4 tangent;
 in vec4 joints;
 in vec4 weights;
+#ifdef FLUTTER_SCENE_SKIN_12_INFLUENCES
+in vec4 joints_1;
+in vec4 weights_1;
+in vec4 joints_2;
+in vec4 weights_2;
+#endif
 
 // The v_* outputs are declared in material_vertex.glsl (included first), so a
 // material's custom varyings can follow them with matching interpolant slots.
@@ -84,10 +94,34 @@ void main() {
     // Exports often sum to slightly under 1, and since a joint matrix carries
     // the model's world position the deficit scales that position too (a 0.98
     // vertex lands 60 m short at 3 km). Normalize, first joint when all zero.
+#ifdef FLUTTER_SCENE_SKIN_12_INFLUENCES
+    // The same normalization, over all twelve weights.
+    float weight_sum = weights.x + weights.y + weights.z + weights.w +
+                       dot(weights_1, vec4(1.0)) + dot(weights_2, vec4(1.0));
+    float inverse_sum = weight_sum > 0.0 ? 1.0 / weight_sum : 0.0;
+    vec4 w = weight_sum > 0.0 ? weights * inverse_sum
+                              : vec4(1.0, 0.0, 0.0, 0.0);
+    skin_matrix = GetJoint(joints.x) * w.x + GetJoint(joints.y) * w.y +
+                  GetJoint(joints.z) * w.z + GetJoint(joints.w) * w.w;
+    // The importer packs each vertex's influences into the leading slots, so
+    // a vertex with four or fewer leaves the later sets zero and skips their
+    // joint fetches (four texels per joint).
+    if (weights_1 != vec4(0.0)) {
+      vec4 w1 = weights_1 * inverse_sum;
+      skin_matrix += GetJoint(joints_1.x) * w1.x + GetJoint(joints_1.y) * w1.y +
+                     GetJoint(joints_1.z) * w1.z + GetJoint(joints_1.w) * w1.w;
+    }
+    if (weights_2 != vec4(0.0)) {
+      vec4 w2 = weights_2 * inverse_sum;
+      skin_matrix += GetJoint(joints_2.x) * w2.x + GetJoint(joints_2.y) * w2.y +
+                     GetJoint(joints_2.z) * w2.z + GetJoint(joints_2.w) * w2.w;
+    }
+#else
     float weight_sum = weights.x + weights.y + weights.z + weights.w;
     vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
     skin_matrix = GetJoint(joints.x) * w.x + GetJoint(joints.y) * w.y +
                   GetJoint(joints.z) * w.z + GetJoint(joints.w) * w.w;
+#endif
   } else {
     skin_matrix = mat4(1); // Identity matrix.
   }
@@ -145,6 +179,10 @@ void main() {
                color.xyz + tangent.xyz +
                joints.xyz + weights.xyz,
            0.0);
+#ifdef FLUTTER_SCENE_SKIN_12_INFLUENCES
+  gl_Position += vertex_keep_alive.keep_alive.x *
+      vec4(joints_1.xyz + weights_1.xyz + joints_2.xyz + weights_2.xyz, 0.0);
+#endif
 #ifdef MATERIAL_PARAMS_KEEP_ALIVE
   // Keep MaterialParams live even when Vertex() reads no parameter; the
   // runtime binds the block to the vertex stage unconditionally.

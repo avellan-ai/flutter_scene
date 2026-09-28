@@ -117,7 +117,8 @@ class _GeometryBufferBlock {
 ///  * [UnskinnedGeometry] has 72-byte position, normal, UV0, UV1, color,
 ///    tangent data.
 ///  * [SkinnedGeometry] has 104-byte unskinned data plus 4 joint indices and
-///    4 joint weights. Used in conjunction with a [Skin].
+///    4 joint weights, or 168 bytes with 12 of each for meshes with more than
+///    four influences per vertex. Used in conjunction with a [Skin].
 ///
 /// Construct an instance directly and call [uploadVertexData] (or
 /// [setVertices]/[setIndices] with already-uploaded buffer views) to
@@ -431,9 +432,10 @@ abstract class Geometry {
   ///
   /// The vertices must match this geometry subclass's expected interleaved
   /// layout (72 bytes per vertex for [UnskinnedGeometry], 104 bytes for
-  /// [SkinnedGeometry]). The subclass may split the interleaved bytes into
-  /// several tightly packed streams (see [_vertexStreamBytes]); the streams
-  /// are bound via [setVertexStreams] and the indices via [setIndices].
+  /// [SkinnedGeometry], or 168 with 12 influences). The subclass may split
+  /// the interleaved bytes into several tightly packed streams (see
+  /// [_vertexStreamBytes]); the streams are bound via [setVertexStreams] and
+  /// the indices via [setIndices].
   ///
   /// How many [gpu.DeviceBuffer]s that takes, and where in them the indices
   /// land, is the backend's to decide (see [_uploadStreams]), so read the
@@ -460,7 +462,12 @@ abstract class Geometry {
         '${vertexCount * stride} bytes. Repack at $stride bytes per vertex '
         '(position 3, normal 3, tex_coords_0 2, tex_coords_1 2, color 4, '
         'tangent 4'
-        '${stride == kSkinnedPerVertexSize ? ', joints 4, weights 4' : ''}, '
+        '${switch (stride) {
+          kSkinnedPerVertexSize => ', joints 4, weights 4',
+          kSkinned12PerVertexSize => ', joints 4, weights 4, joints_1 4, '
+              'weights_1 4, joints_2 4, weights_2 4',
+          _ => '',
+        }}, '
         'all float32, in that order), or supply attributes as separate arrays '
         'with MeshGeometry.fromArrays.',
       );
@@ -688,7 +695,7 @@ abstract class Geometry {
     Float32List? tangents;
     if (interleaved != null) {
       final stride = this is SkinnedGeometry
-          ? kSkinnedPerVertexSize ~/ 4
+          ? _expectedVertexStrideInBytes! ~/ 4
           : kUnskinnedPerVertexSize ~/ 4;
       final floats = Float32List.sublistView(interleaved);
       positions = Float32List(_vertexCount * 3);
@@ -869,7 +876,8 @@ abstract class Geometry {
   /// The `.fmat` vertex-variant key for this geometry's mesh type, used to
   /// select a custom material's generated vertex shader (see
   /// [Material.materialVertexShader]). Unskinned geometry is `'unskinned'`;
-  /// [SkinnedGeometry] overrides this to `'skinned'`.
+  /// [SkinnedGeometry] overrides this to `'skinned'`, or `'skinned12'` for
+  /// its 12-influence layout.
   @internal
   String get materialVertexVariant => 'unskinned';
 
@@ -1331,6 +1339,12 @@ class UnskinnedGeometry extends Geometry {
 /// Geometry whose vertices use the skinned 104-byte layout: the
 /// unskinned attributes followed by 4 joint indices and 4 joint weights.
 ///
+/// With [influences] 12 the vertices use the 168-byte layout instead, two
+/// more sets of 4 joint indices and 4 weights after the first, drawn by the
+/// `Skinned12Vertex` shader. The importer picks it only for meshes that weight
+/// some vertex to more than four joints, so 4-influence meshes keep the
+/// narrower vertex and its cheaper shader.
+///
 /// Used for meshes attached to a [Skin] for skeletal animation. The
 /// joints texture supplied by the skin must be assigned before each draw
 /// via [setJointsTexture].
@@ -1340,13 +1354,30 @@ class SkinnedGeometry extends Geometry {
   int _jointsTextureWidth = 0;
 
   /// Creates a [SkinnedGeometry] preconfigured with the `SkinnedVertex`
-  /// shader from [baseShaderLibrary].
-  SkinnedGeometry() {
-    setVertexShaderName('SkinnedVertex');
+  /// shader from [baseShaderLibrary], or `Skinned12Vertex` when [influences]
+  /// is 12.
+  ///
+  /// [influences] is the joint influences each vertex carries, 4 or 12; it
+  /// fixes the vertex layout [uploadVertexData] expects.
+  SkinnedGeometry({this.influences = 4}) {
+    if (influences != 4 && influences != kMaxSkinInfluences) {
+      throw ArgumentError.value(
+        influences,
+        'influences',
+        'must be 4 or $kMaxSkinInfluences',
+      );
+    }
+    setVertexShaderName(_isWide ? 'Skinned12Vertex' : 'SkinnedVertex');
   }
 
+  /// The joint influences per vertex this geometry's layout carries: 4 (the
+  /// 104-byte layout) or 12 (the 168-byte layout).
+  final int influences;
+
+  bool get _isWide => influences == kMaxSkinInfluences;
+
   @override
-  String get materialVertexVariant => 'skinned';
+  String get materialVertexVariant => _isWide ? 'skinned12' : 'skinned';
 
   @override
   VertexLayoutDescriptor? get defaultVertexLayout {
@@ -1356,7 +1387,10 @@ class SkinnedGeometry extends Geometry {
     // know which slot the caller bound them to.
     if (!hasCustomAttributes) return null;
     return VertexLayoutDescriptor(
-      buffers: [kSkinnedVertexBuffer, ...customAttributeBuffers],
+      buffers: [
+        _isWide ? kSkinned12VertexBuffer : kSkinnedVertexBuffer,
+        ...customAttributeBuffers,
+      ],
     );
   }
 
@@ -1370,7 +1404,8 @@ class SkinnedGeometry extends Geometry {
   bool get _autoScanBoundsOnUpload => false;
 
   @override
-  int get _expectedVertexStrideInBytes => kSkinnedPerVertexSize;
+  int get _expectedVertexStrideInBytes =>
+      _isWide ? kSkinned12PerVertexSize : kSkinnedPerVertexSize;
 
   @override
   void setJointsTexture(gpu.Texture? texture, int width) {
@@ -1748,48 +1783,84 @@ void bindUnskinnedFrameInfo(
 @internal
 const VertexBufferDescriptor kSkinnedVertexBuffer = VertexBufferDescriptor(
   strideInBytes: kSkinnedPerVertexSize,
+  attributes: _kSkinnedAttributes,
+);
+
+/// Slot 0 of a 12-influence skinned mesh: the interleaved 168-byte vertex
+/// stream the `Skinned12Vertex` shader reads, the 104-byte attributes followed
+/// by the second and third joint/weight sets. Offsets match the bytes the
+/// glTF primitive packer emits.
+@internal
+const VertexBufferDescriptor kSkinned12VertexBuffer = VertexBufferDescriptor(
+  strideInBytes: kSkinned12PerVertexSize,
   attributes: [
+    ..._kSkinnedAttributes,
     VertexAttributeDescriptor(
-      name: 'position',
-      format: gpu.VertexFormat.float32x3,
-    ),
-    VertexAttributeDescriptor(
-      name: 'normal',
-      format: gpu.VertexFormat.float32x3,
-      offsetInBytes: 12,
-    ),
-    VertexAttributeDescriptor(
-      name: 'texture_coords',
-      format: gpu.VertexFormat.float32x2,
-      offsetInBytes: 24,
-    ),
-    VertexAttributeDescriptor(
-      name: 'texture_coords_1',
-      format: gpu.VertexFormat.float32x2,
-      offsetInBytes: 32,
-    ),
-    VertexAttributeDescriptor(
-      name: 'color',
+      name: 'joints_1',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 40,
+      offsetInBytes: 104,
     ),
     VertexAttributeDescriptor(
-      name: 'tangent',
+      name: 'weights_1',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 56,
+      offsetInBytes: 120,
     ),
     VertexAttributeDescriptor(
-      name: 'joints',
+      name: 'joints_2',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 72,
+      offsetInBytes: 136,
     ),
     VertexAttributeDescriptor(
-      name: 'weights',
+      name: 'weights_2',
       format: gpu.VertexFormat.float32x4,
-      offsetInBytes: 88,
+      offsetInBytes: 152,
     ),
   ],
 );
+
+/// The attributes of the 104-byte skinned vertex, which open the 168-byte
+/// one too.
+const List<VertexAttributeDescriptor> _kSkinnedAttributes = [
+  VertexAttributeDescriptor(
+    name: 'position',
+    format: gpu.VertexFormat.float32x3,
+  ),
+  VertexAttributeDescriptor(
+    name: 'normal',
+    format: gpu.VertexFormat.float32x3,
+    offsetInBytes: 12,
+  ),
+  VertexAttributeDescriptor(
+    name: 'texture_coords',
+    format: gpu.VertexFormat.float32x2,
+    offsetInBytes: 24,
+  ),
+  VertexAttributeDescriptor(
+    name: 'texture_coords_1',
+    format: gpu.VertexFormat.float32x2,
+    offsetInBytes: 32,
+  ),
+  VertexAttributeDescriptor(
+    name: 'color',
+    format: gpu.VertexFormat.float32x4,
+    offsetInBytes: 40,
+  ),
+  VertexAttributeDescriptor(
+    name: 'tangent',
+    format: gpu.VertexFormat.float32x4,
+    offsetInBytes: 56,
+  ),
+  VertexAttributeDescriptor(
+    name: 'joints',
+    format: gpu.VertexFormat.float32x4,
+    offsetInBytes: 72,
+  ),
+  VertexAttributeDescriptor(
+    name: 'weights',
+    format: gpu.VertexFormat.float32x4,
+    offsetInBytes: 88,
+  ),
+];
 
 /// The unique edges of a triangle list as a line-list index buffer.
 ///

@@ -1013,6 +1013,7 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(variants.keys, <String>{
         'CurvedUnskinnedVertex',
         'CurvedSkinnedVertex',
+        'CurvedSkinned12Vertex',
         'CurvedUnskinnedDepthVertex',
       });
       // Each variant suppresses the no-op hook, declares the shared param
@@ -1051,6 +1052,7 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(sidecar['vertex'], <String, Object?>{
         'unskinned': 'CurvedUnskinnedVertex',
         'skinned': 'CurvedSkinnedVertex',
+        'skinned12': 'CurvedSkinned12Vertex',
         'depth': 'CurvedUnskinnedDepthVertex',
       });
     });
@@ -1195,7 +1197,11 @@ fragment {
 
     test('color variants declare each attribute as an in', () {
       final variants = emitVertexGlsl(parseFmat(withAttributes));
-      for (final key in ['AttrUnskinnedVertex', 'AttrSkinnedVertex']) {
+      for (final key in [
+        'AttrUnskinnedVertex',
+        'AttrSkinnedVertex',
+        'AttrSkinned12Vertex',
+      ]) {
         expect(variants[key], contains('in float wave_phase;'));
         expect(variants[key], contains('in vec3 bary;'));
       }
@@ -1219,6 +1225,20 @@ fragment { void Surface(inout MaterialInputs material) {} }
 '''),
         _throwsFmat('must be one of float, vec2, vec3, vec4'),
       );
+    });
+
+    test('rejects attribute names the skinned shaders already declare', () {
+      for (final name in ['joints', 'weights', 'joints_1', 'weights_2']) {
+        expect(
+          () => parseFmat('''
+material { name: "X", attributes: [ { type: vec4, name: $name } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+          _throwsFmat('engine-reserved'),
+          reason: name,
+        );
+      }
     });
 
     test('rejects attributes without a vertex block', () {

@@ -7,7 +7,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart'
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart'
-    show kSkinnedPerVertexSize;
+    show kMaxSkinInfluences, kSkinned12PerVertexSize, kSkinnedPerVertexSize;
 import 'package:flutter_scene/src/render/depth_prepass.dart'
     show kPrepassDepthStencilBlackboardKey;
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -48,6 +48,52 @@ final VertexLayoutDescriptor _kSkinnedVelocityLayout = VertexLayoutDescriptor(
           name: 'weights',
           format: gpu.VertexFormat.float32x4,
           offsetInBytes: 88,
+        ),
+      ],
+    ),
+  ],
+);
+
+/// [_kSkinnedVelocityLayout] over the 168-byte 12-influence vertex, adding its
+/// second and third joint/weight sets.
+final VertexLayoutDescriptor _kSkinned12VelocityLayout = VertexLayoutDescriptor(
+  buffers: const [
+    VertexBufferDescriptor(
+      strideInBytes: kSkinned12PerVertexSize,
+      attributes: [
+        VertexAttributeDescriptor(
+          name: 'position',
+          format: gpu.VertexFormat.float32x3,
+        ),
+        VertexAttributeDescriptor(
+          name: 'joints',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 72,
+        ),
+        VertexAttributeDescriptor(
+          name: 'weights',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 88,
+        ),
+        VertexAttributeDescriptor(
+          name: 'joints_1',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 104,
+        ),
+        VertexAttributeDescriptor(
+          name: 'weights_1',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 120,
+        ),
+        VertexAttributeDescriptor(
+          name: 'joints_2',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 136,
+        ),
+        VertexAttributeDescriptor(
+          name: 'weights_2',
+          format: gpu.VertexFormat.float32x4,
+          offsetInBytes: 152,
         ),
       ],
     ),
@@ -95,6 +141,8 @@ class VelocityPass extends RenderGraphPass {
       baseShaderLibrary['VelocityUnskinnedVertex']!;
   static final gpu.Shader _skinnedVertexShader =
       baseShaderLibrary['VelocitySkinnedVertex']!;
+  static final gpu.Shader _skinned12VertexShader =
+      baseShaderLibrary['VelocitySkinned12Vertex']!;
   static final gpu.Shader _fragmentShader =
       baseShaderLibrary['VelocityFragment']!;
 
@@ -165,18 +213,23 @@ class VelocityPass extends RenderGraphPass {
       if ((item.layers & _layerMask) == 0) return;
       if (!item.isMoving) return;
 
+      final geometry = item.geometry;
       final isSkinned =
-          item.geometry is SkinnedGeometry &&
+          geometry is SkinnedGeometry &&
           item.jointsTexture != null &&
           _skinnedMotion;
+      final isWide = isSkinned && geometry.influences == kMaxSkinInfluences;
 
-      final vertexShader = isSkinned
-          ? _skinnedVertexShader
-          : _unskinnedVertexShader;
-      final vertexLayout = isSkinned
-          ? _kSkinnedVelocityLayout
-          : (item.geometry.depthOnlyVertex?.layout ??
-                kUnskinnedPositionOnlyLayout);
+      final vertexShader = !isSkinned
+          ? _unskinnedVertexShader
+          : isWide
+          ? _skinned12VertexShader
+          : _skinnedVertexShader;
+      final vertexLayout = !isSkinned
+          ? (geometry.depthOnlyVertex?.layout ?? kUnskinnedPositionOnlyLayout)
+          : isWide
+          ? _kSkinned12VelocityLayout
+          : _kSkinnedVelocityLayout;
       final pipeline = resolvePipeline(
         vertexShader,
         _fragmentShader,

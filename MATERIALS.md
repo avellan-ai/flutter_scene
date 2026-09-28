@@ -417,6 +417,11 @@ geometry.setCustomAttribute('phase', phaseValues, components: 1);
 Custom attributes work on both static and skinned meshes; attaching one to a
 skinned mesh switches its vertex layout to a described one, since reflection
 cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).
+Every vertex attribute uses a slot, and WebGL2, GLES 3.0 and many Vulkan
+devices provide only 16. A 4-influence skinned mesh uses 8, leaving 8 for
+custom attributes; a 12-influence mesh uses 12, leaving 4. The names
+`joints`, `weights`, `joints_1`, `weights_1`, `joints_2` and `weights_2` are
+the engine's skinning inputs and cannot name custom attributes.
 The depth/shadow pass fetches only position, so an attribute reads zero there:
 a displacement driven by a custom attribute is not reflected in the shadow,
 while one driven by `world_position`/a parameter is (world position is
@@ -1162,7 +1167,10 @@ Your shader writes `gl_Position` and the standard outputs the fragment stage rea
 your own varyings. A skinned mesh
 instead takes its model transform,
 `enable_skinning`, and `joint_texture_size` in `FrameInfo`, and adds the
-`joints` and `weights` attributes and a `joints_texture` sampler.
+`joints` and `weights` attributes and a `joints_texture` sampler. A skinned
+mesh weighting some vertex to more than four joints (`SkinnedGeometry` with
+`influences: 12`) also adds `joints_1`, `weights_1`, `joints_2`, and
+`weights_2`, and draws with the `MeshVariant.skinned12` shader.
 
 ## Mesh kinds and passes
 
@@ -1174,8 +1182,10 @@ material.setVertexShader(skinnedShader, variant: MeshVariant.skinned);
 material.setVertexShader(depthShader, variant: MeshVariant.depth);
 ```
 
-`MeshVariant.depth` is the position-only pass that draws shadow maps and the
-depth prepass. Supply it when your vertex stage moves geometry, or the shadow
+`MeshVariant.skinned12` is the skinned kind for meshes with more than four
+joint influences per vertex; a material that supplies `skinned` and draws such
+meshes supplies it too. `MeshVariant.depth` is the position-only pass that
+draws shadow maps and the depth prepass. Supply it when your vertex stage moves geometry, or the shadow
 keeps the undisplaced shape.
 
 Any variant you leave unset falls back to the engine's shader for that mesh

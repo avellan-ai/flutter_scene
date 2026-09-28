@@ -201,7 +201,8 @@ void _testNodeMesh(
       if (vertices == null) continue;
       stride = vertices.lengthInBytes ~/ data.vertexCount;
       if (stride != kUnskinnedPerVertexSize &&
-          stride != kSkinnedPerVertexSize) {
+          stride != kSkinnedPerVertexSize &&
+          stride != kSkinned12PerVertexSize) {
         continue; // custom layout; not raycastable
       }
     }
@@ -234,8 +235,8 @@ void _testNodeMesh(
 }
 
 // Byte offsets within the engine vertex layout (see importer/constants.dart):
-// position is the first three floats and tex_coords floats 6..7 in both the
-// unskinned and skinned layouts.
+// position is the first three floats and tex_coords floats 6..7 in the
+// unskinned and both skinned layouts.
 const int _positionOffset = 0;
 const int _texCoordOffset = 6 * 4;
 

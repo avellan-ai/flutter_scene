@@ -5,7 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
+import 'package:flutter_scene/fscene.dart' show loadFscenebBytesAsync;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/in_memory_import.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 // ignore: implementation_imports
@@ -17,6 +20,7 @@ import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
 import 'package:smoke_render/synthetic_morph_glb.dart';
+import 'package:smoke_render/synthetic_skin12_glb.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Side length of the captured render, in logical pixels. Fixed for
@@ -512,6 +516,38 @@ Future<void> loadWeightSumModel() async {
   _weightSumModel ??= await Node.fromGlbBytes(
     buildMorphSkinnedGlb(weightSum: 0.98),
   );
+}
+
+/// The 12-influence tube through both importers, and its CPU-skinned
+/// reference, for the skinned_12_influences scene.
+Node? _skin12Runtime;
+Node? _skin12Fsceneb;
+Node? _skin12Reference;
+
+/// Imports the synthetic 12-influence GLB at runtime and through the offline
+/// importer's `.fsceneb` container, and builds the CPU-skinned reference as
+/// an unskinned mesh wearing the imported material.
+Future<void> loadSkin12Models() async {
+  if (_skin12Runtime != null) return;
+  final glb = buildSkin12Glb();
+  final runtime = await Node.fromGlbBytes(glb);
+  final fsceneb = await loadFscenebBytesAsync(importGlbToFscenebBytes(glb));
+  final reference = skin12Reference();
+  final material = runtime.meshNodes.first.mesh!.primitives.first.material;
+  _skin12Reference = Node(
+    name: 'Skin12Reference',
+    mesh: Mesh(
+      MeshGeometry.fromArrays(
+        positions: reference.positions,
+        normals: reference.normals,
+        colors: reference.colors,
+        indices: reference.indices,
+      ),
+      material,
+    ),
+  );
+  _skin12Runtime = runtime;
+  _skin12Fsceneb = fsceneb;
 }
 
 /// A 64x64 PNG, a one-texel black and white checkerboard, uploaded through
@@ -2075,6 +2111,41 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadWeightSumModel),
+  // A tube weighted to twelve joints per vertex, split over JOINTS_0 through
+  // JOINTS_2 (see synthetic_skin12_glb.dart). Left to right: the runtime
+  // import, the offline `.fsceneb` import, and the same tube skinned on the
+  // CPU with all twelve influences as an unskinned mesh. All three must be
+  // one centered corkscrew; an importer or shader that keeps four influences
+  // draws its copy shoved toward one side instead. The orthographic view
+  // (80 pixels per unit) puts the copies exactly 160 pixels apart, so they
+  // compare by shifting.
+  SmokeScene('skinned_12_influences', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.3, -0.6, 0.75),
+        DirectionalLight(castsShadow: false),
+      ),
+    );
+    Node placed(Node model, double x) => Node()
+      ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0, 0))
+      ..add(model);
+    scene.add(placed(_skin12Runtime!, -2.0));
+    scene.add(placed(_skin12Fsceneb!, 0));
+    scene.add(placed(_skin12Reference!, 2.0));
+    return (
+      scene: scene,
+      camera: OrthographicCamera(
+        position: vm.Vector3(0, 4.6, -5.4),
+        target: vm.Vector3(0, 1.0, 0),
+        projection: OrthographicProjection(
+          size: const OrthographicSize.contain(6.4, 6.4),
+          near: -20.0,
+          far: 20.0,
+        ),
+      ),
+    );
+  }, preload: loadSkin12Models),
   // Nine unit cubes ahead of the camera and twenty-seven behind it. The
   // frame shows the nine; the counters have to say the other twenty-seven
   // were culled, which is what a rejected BVH subtree never reported.

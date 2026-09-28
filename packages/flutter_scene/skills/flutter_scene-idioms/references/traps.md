@@ -257,8 +257,9 @@ machine, black on a phone.
 **Symptom.** Washed-out colors, see-through faces, geometry smeared toward the origin.
 
 **Do instead.** Unskinned vertices are 72 bytes (position 3, normal 3, tex_coords 2, tex_coords_1 2,
-color 4, tangent 4, all float32), skinned are 104 (+ joints 4, weights 4). Better, do not hand-pack:
-use `MeshGeometry.fromArrays`, `fromMeshData`, or `GeometryBuilder`.
+color 4, tangent 4, all float32), skinned are 104 (+ joints 4, weights 4), and
+`SkinnedGeometry(influences: 12)` is 168 (+ joints_1, weights_1, joints_2, weights_2). Better, do not
+hand-pack: use `MeshGeometry.fromArrays`, `fromMeshData`, or `GeometryBuilder`.
 
 **[0.22.0 catches this]** `uploadVertexData` on both `SkinnedGeometry` and `UnskinnedGeometry` now
 throws an `ArgumentError` when the byte length does not match `vertexCount * stride`, naming the

@@ -225,14 +225,18 @@ void main() {
       const expectedVertexSamplers = {
         'UnskinnedVertex': 0,
         'SkinnedVertex': 1,
+        'Skinned12Vertex': 1,
         'MorphedUnskinnedVertex': 1,
         'MorphedSkinnedVertex': 2,
+        'MorphedSkinned12Vertex': 2,
       };
       const expectedCombined = {
         'UnskinnedVertex': 15,
         'SkinnedVertex': 16,
+        'Skinned12Vertex': 16,
         'MorphedUnskinnedVertex': 16,
         'MorphedSkinnedVertex': 17,
+        'MorphedSkinned12Vertex': 17,
       };
       final manifest =
           jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())

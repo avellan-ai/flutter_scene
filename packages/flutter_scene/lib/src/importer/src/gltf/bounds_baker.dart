@@ -626,8 +626,9 @@ List<Matrix4> _readInverseBindMatrices(
 }
 
 /// Per-joint AABB of vertex positions weighted onto that joint, in
-/// mesh-local space. Vertices with weight 0 on a joint don't
-/// contribute to that joint's influence AABB.
+/// mesh-local space, over every authored `JOINTS_n`/`WEIGHTS_n` set.
+/// Vertices with weight 0 on a joint don't contribute to that joint's
+/// influence AABB.
 List<AabbBounds> _computeJointInfluenceAabbs(
   GltfMeshPrimitive prim,
   GltfDocument doc,
@@ -659,19 +660,24 @@ List<AabbBounds> _computeJointInfluenceAabbs(
   }
 
   final positions = read(prim.attributes['POSITION']!);
-  final joints = read(prim.attributes['JOINTS_0']!);
-  final weights = read(prim.attributes['WEIGHTS_0']!);
   final vertexCount = positions.length ~/ 3;
-  for (int v = 0; v < vertexCount; v++) {
-    final px = positions[v * 3 + 0];
-    final py = positions[v * 3 + 1];
-    final pz = positions[v * 3 + 2];
-    for (int c = 0; c < 4; c++) {
-      final w = weights[v * 4 + c];
-      if (w <= 0) continue;
-      final j = joints[v * 4 + c].toInt();
-      if (j < 0 || j >= jointCount) continue;
-      influence[j].includePoint(px, py, pz);
+  for (var set = 0; ; set++) {
+    final jointsIdx = prim.attributes['JOINTS_$set'];
+    final weightsIdx = prim.attributes['WEIGHTS_$set'];
+    if (jointsIdx == null || weightsIdx == null) break;
+    final joints = read(jointsIdx);
+    final weights = read(weightsIdx);
+    for (int v = 0; v < vertexCount; v++) {
+      final px = positions[v * 3 + 0];
+      final py = positions[v * 3 + 1];
+      final pz = positions[v * 3 + 2];
+      for (int c = 0; c < 4; c++) {
+        final w = weights[v * 4 + c];
+        if (w <= 0) continue;
+        final j = joints[v * 4 + c].toInt();
+        if (j < 0 || j >= jointCount) continue;
+        influence[j].includePoint(px, py, pz);
+      }
     }
   }
   return influence;

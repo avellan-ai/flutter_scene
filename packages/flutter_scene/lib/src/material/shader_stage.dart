@@ -24,6 +24,11 @@ enum MeshVariant {
   /// shader sees them.
   skinned('skinned'),
 
+  /// A skinned mesh weighting some vertex to more than four joints, whose
+  /// vertices carry 12 joint influences (the 168-byte layout, which adds the
+  /// `joints_1`, `weights_1`, `joints_2`, and `weights_2` inputs).
+  skinned12('skinned12'),
+
   /// The position-only pass that draws shadow maps and the depth prepass.
   /// Supply this when the vertex stage moves geometry, so its shadow moves
   /// with it.
@@ -37,6 +42,7 @@ enum MeshVariant {
   /// The variant [name] selects, or [unskinned] for an unknown name.
   static MeshVariant fromName(String name) => switch (name) {
     'skinned' => MeshVariant.skinned,
+    'skinned12' => MeshVariant.skinned12,
     'depth' => MeshVariant.depth,
     _ => MeshVariant.unskinned,
   };

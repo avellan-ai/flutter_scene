@@ -215,9 +215,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   }
 
   /// The generated vertex shaders for a `vertex { }` material, keyed by the
-  /// variant the geometry selects (`'unskinned'`, `'skinned'`, `'depth'`), or
-  /// null when the material does not customize the vertex stage. Resolved by
-  /// the loader from the sidecar's `vertex` map and the shader bundle.
+  /// variant the geometry selects (`'unskinned'`, `'skinned'`, `'skinned12'`,
+  /// `'depth'`), or null when the material does not customize the vertex
+  /// stage. Resolved by the loader from the sidecar's `vertex` map and the
+  /// shader bundle.
   Map<String, gpu.Shader>? _vertexShaders;
 
   @override

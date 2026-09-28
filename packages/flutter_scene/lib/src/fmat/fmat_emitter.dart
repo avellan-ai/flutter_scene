@@ -44,18 +44,26 @@ const int kFrameworkVaryingSchemaVersion = 2;
 /// The engine vertex variants a material with a `vertex { }` block generates a
 /// shader for, mapping the sidecar key the runtime selects by to the shared
 /// body include that variant reuses. The keys correspond to the geometry a
-/// draw uses: `unskinned` for static meshes, `skinned` for skinned meshes, and
+/// draw uses: `unskinned` for static meshes, `skinned` for skinned meshes,
+/// `skinned12` for skinned meshes with more than four joint influences, and
 /// `depth` for the position-only shadow-map / depth-prepass pass.
 const Map<String, String> kVertexVariants = <String, String>{
   'unskinned': 'flutter_scene_unskinned_body.glsl',
   'skinned': 'flutter_scene_skinned_body.glsl',
+  'skinned12': 'flutter_scene_skinned_body.glsl',
   'depth': 'flutter_scene_unskinned_depth_body.glsl',
 };
 
 const Map<String, String> _vertexVariantEntrySuffix = <String, String>{
   'unskinned': 'UnskinnedVertex',
   'skinned': 'SkinnedVertex',
+  'skinned12': 'Skinned12Vertex',
   'depth': 'UnskinnedDepthVertex',
+};
+
+/// The defines each variant sets ahead of its body include.
+const Map<String, List<String>> _vertexVariantDefines = <String, List<String>>{
+  'skinned12': ['FLUTTER_SCENE_SKIN_12_INFLUENCES'],
 };
 
 /// The shader-bundle entry name for [material]'s [variant] vertex shader (one
@@ -488,6 +496,7 @@ Map<String, String> emitVertexGlsl(FmatMaterial material) {
     result[vertexVariantEntryName(material, variant)] = _emitVertexVariant(
       material,
       bodyInclude,
+      defines: _vertexVariantDefines[variant] ?? const [],
       isDepth: variant == 'depth',
       // Only the unskinned color variant fetches the instance-rate slot the
       // custom attributes ride in; the skinned variant takes its transform
@@ -575,6 +584,7 @@ void _writeInstanceAttributes(
 String _emitVertexVariant(
   FmatMaterial material,
   String bodyInclude, {
+  required List<String> defines,
   required bool isDepth,
   required bool fetchesInstanceAttributes,
 }) {
@@ -582,6 +592,9 @@ String _emitVertexVariant(
   sb.writeln(
     '// Generated from a .fmat material by flutter_scene. Do not edit.',
   );
+  for (final define in defines) {
+    sb.writeln('#define $define');
+  }
 
   final uniforms = material.uniformParameters.toList();
   if (uniforms.isNotEmpty) {

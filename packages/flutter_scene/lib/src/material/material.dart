@@ -474,8 +474,9 @@ abstract class Material {
   }
 
   /// The vertex shader this material supplies for a geometry's [variant]
-  /// (`'unskinned'` / `'skinned'` for the color pass, `'depth'` for the
-  /// position-only depth/shadow pass; see [Geometry.materialVertexVariant]),
+  /// (`'unskinned'` / `'skinned'` / `'skinned12'` for the color pass,
+  /// `'depth'` for the position-only depth/shadow pass; see
+  /// [Geometry.materialVertexVariant]),
   /// or null to use the engine's standard vertex shader for the geometry.
   ///
   /// The base class supplies none, so drawing is unchanged. A `.fmat` with a

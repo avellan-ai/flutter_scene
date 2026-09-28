@@ -955,6 +955,7 @@ const Set<String> _vertexLayouts = {
   'unskinned_soa_uv1_tangent',
   'unskinned_uv1_tangent',
   'skinned_uv1_tangent',
+  'skinned12_uv1_tangent',
   'unskinned_soa',
   'skinned',
   'unskinned',

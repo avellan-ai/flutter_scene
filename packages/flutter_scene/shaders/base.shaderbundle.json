@@ -15,6 +15,14 @@
     "type": "vertex",
     "file": "shaders/flutter_scene_morphed_skinned.vert"
   },
+  "Skinned12Vertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_skinned12.vert"
+  },
+  "MorphedSkinned12Vertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_morphed_skinned12.vert"
+  },
   "UnskinnedDepthVertex": {
     "type": "vertex",
     "file": "shaders/flutter_scene_unskinned_depth.vert"
@@ -298,6 +306,10 @@
   "VelocitySkinnedVertex": {
     "type": "vertex",
     "file": "shaders/flutter_scene_velocity_skinned.vert"
+  },
+  "VelocitySkinned12Vertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_velocity_skinned12.vert"
   },
   "VelocityFragment": {
     "type": "fragment",

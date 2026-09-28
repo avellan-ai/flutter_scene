@@ -147,6 +147,12 @@ abstract final class InterleavedLayoutAdapter {
   static const String unskinnedInterleavedLayout = 'unskinned_uv1_tangent';
   static const String skinnedLayout = 'skinned_uv1_tangent';
 
+  /// The `.fscene` payload layout string for the interleaved 168-byte skinned
+  /// vertex (12 joint influences). Written only for meshes that need more
+  /// than four, so 4-influence meshes keep [skinnedLayout] and load on engines
+  /// that predate this one.
+  static const String skinned12Layout = 'skinned12_uv1_tangent';
+
   /// Expands the original four-stream unskinned payload with zero UV1 and
   /// tangent streams.
   static UnskinnedAttributeStreams upgradeLegacyUnskinnedSoa(

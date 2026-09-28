@@ -539,6 +539,7 @@ class ResourceRealizer {
     late final bool skinned;
     late final bool legacy;
     late final int perVertexBytes;
+    var influences = 4;
     if (layout == InterleavedLayoutAdapter.unskinnedSoaLayout) {
       soa = true;
       skinned = false;
@@ -554,6 +555,12 @@ class ResourceRealizer {
       skinned = true;
       legacy = false;
       perVertexBytes = kSkinnedPerVertexSize;
+    } else if (layout == InterleavedLayoutAdapter.skinned12Layout) {
+      soa = false;
+      skinned = true;
+      legacy = false;
+      perVertexBytes = kSkinned12PerVertexSize;
+      influences = kMaxSkinInfluences;
     } else if (layout == 'unskinned_soa') {
       soa = true;
       skinned = false;
@@ -586,8 +593,8 @@ class ResourceRealizer {
         : _buildMorphData(res, res.morphTargets!, vertexCount);
     final Geometry geometry = skinned
         ? (morphData != null
-              ? MorphedSkinnedGeometry(morphData)
-              : SkinnedGeometry())
+              ? MorphedSkinnedGeometry(morphData, influences: influences)
+              : SkinnedGeometry(influences: influences))
         : (morphData != null
               ? MorphedUnskinnedGeometry(morphData)
               : UnskinnedGeometry());

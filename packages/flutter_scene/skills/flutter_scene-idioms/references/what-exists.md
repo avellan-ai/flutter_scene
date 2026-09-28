@@ -200,7 +200,9 @@ int16})`, `isReadable`, `extractMeshData()`, `setVertexShader`/`setVertexShaderN
 `SkinnedGeometry`/`UnskinnedGeometry` subclasses. `GeometryBufferArena({blockSizeInBytes = 16MB})`.
 
 Vertex layout: unskinned 72 bytes/18 floats = position(3) normal(3) texture_coords(2)
-texture_coords_1(2) color(4) tangent(4). Skinned 104 bytes/26 floats = + joints(4) weights(4). Do
+texture_coords_1(2) color(4) tangent(4). Skinned 104 bytes/26 floats = + joints(4) weights(4);
+`SkinnedGeometry(influences: 12)` is 168 bytes/42 floats = + joints_1(4) weights_1(4) joints_2(4)
+weights_2(4), which the glTF importers pick for meshes with more than 4 influences per vertex. Do
 not hand-pack; use `fromArrays`/`fromMeshData`/`GeometryBuilder`.
 
 ### Instancing and LOD
@@ -268,7 +270,7 @@ counterClockwise, isOpaqueOverride = true})`. `setVertexShader(shader, {variant 
 `setUniformBlockFromFloats(name, List<double>, {stage})`, `getUniformBlock`, `uniformBlockNames`,
 `setTexture(name, texture, {sampler, stage})` (accepts `gpu.Texture`/`Texture2D`/`RenderTexture`),
 `getTexture`, `textureNames`. `ShaderStage` = `vertex` | `fragment`; `MeshVariant` = `unskinned` |
-`skinned` | `depth`.
+`skinned` | `skinned12` | `depth`.
 
 Fragment shaders MUST output linear HDR premultiplied by alpha (exposure, tone mapping, and the
 display encode are applied later by the resolve pass). Same contract for `ShaderSkySource` and

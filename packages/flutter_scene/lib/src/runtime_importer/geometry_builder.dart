@@ -33,6 +33,7 @@ Geometry geometryFromPacked(
                   targetNames: morphTargetNames,
                   defaultWeights: defaultMorphWeights,
                 ),
+                influences: packed.skinInfluences,
               )
             : MorphedUnskinnedGeometry(
                 morphDataFromPacked(
@@ -41,7 +42,9 @@ Geometry geometryFromPacked(
                   defaultWeights: defaultMorphWeights,
                 ),
               ))
-      : (packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry());
+      : (packed.isSkinned
+            ? SkinnedGeometry(influences: packed.skinInfluences)
+            : UnskinnedGeometry());
   // Uploaded as the lists the packer allocated (floats, and indices at their
   // packed width) so the web upload crosses them natively.
   geometry.uploadVertexData(

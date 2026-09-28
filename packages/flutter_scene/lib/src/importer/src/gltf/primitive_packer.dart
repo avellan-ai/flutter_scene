@@ -25,11 +25,12 @@ class PackedPrimitive {
     required this.indices32Bit,
     required this.isSkinned,
     required this.sourceWindingFlipped,
+    this.skinInfluences = 4,
     this.morphTargets,
   });
 
   /// Packed vertex buffer in the engine's vertex layout (72 bytes per
-  /// unskinned vertex, 104 per skinned).
+  /// unskinned vertex, 104 per skinned, 168 per 12-influence skinned).
   final Uint8List vertexBytes;
 
   /// Number of vertices in [vertexBytes].
@@ -46,6 +47,11 @@ class PackedPrimitive {
 
   /// Whether the vertex layout includes joints and weights.
   final bool isSkinned;
+
+  /// The joint influences each skinned vertex carries, 4 (the 104-byte
+  /// layout) or [kMaxSkinInfluences] (the 168-byte layout). Meaningless when
+  /// [isSkinned] is false.
+  final int skinInfluences;
 
   /// Whether the packed source convention reverses native winding.
   final bool sourceWindingFlipped;
@@ -96,6 +102,15 @@ class PackedMorphTargets {
 ///   tangent(4 f32).
 /// - Skinned (104 bytes/vertex): unskinned + joints(4 f32) +
 ///   weights(4 f32).
+/// - 12-influence skinned (168 bytes/vertex): skinned + joints_1(4 f32) +
+///   weights_1(4 f32) + joints_2(4 f32) + weights_2(4 f32).
+///
+/// A primitive with only `JOINTS_0`/`WEIGHTS_0` packs its sets verbatim into
+/// the 104-byte layout. One that also authors `JOINTS_1`/`WEIGHTS_1` (and
+/// beyond) has each vertex's nonzero influences packed into the leading
+/// slots, and takes the 168-byte layout only when some vertex has more than
+/// four; past [kMaxSkinInfluences] a vertex keeps its largest weights. The
+/// shader normalizes whatever remains, as it does four.
 ///
 /// When the primitive omits the NORMAL attribute, glTF requires the
 /// client to generate flat normals. A vertex shared by several
@@ -189,7 +204,7 @@ PackedPrimitive packGltfPrimitive({
       includeSkinning &&
       primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
-  final joints = hasJoints
+  var joints = hasJoints
       ? _readVec4(
           primitive.attributes['JOINTS_0']!,
           accessors,
@@ -197,7 +212,7 @@ PackedPrimitive packGltfPrimitive({
           bufferData,
         )
       : null;
-  final weights = hasJoints
+  var weights = hasJoints
       ? _readVec4(
           primitive.attributes['WEIGHTS_0']!,
           accessors,
@@ -205,6 +220,23 @@ PackedPrimitive packGltfPrimitive({
           bufferData,
         )
       : null;
+  // Further influence sets, when authored, fold into one packed table (see
+  // the function doc). Without them the first set is used as-is.
+  var influences = 4;
+  if (hasJoints && primitive.attributes.containsKey('JOINTS_1')) {
+    final packed = _packInfluenceSets(
+      primitive,
+      accessors,
+      bufferViews,
+      bufferData,
+      vertexCount,
+      joints!,
+      weights!,
+    );
+    joints = packed.joints;
+    weights = packed.weights;
+    influences = packed.influences;
+  }
 
   // Determine the output vertex set. With authored normals the mesh is
   // kept as-is; without them it is de-indexed for flat normals (see the
@@ -273,7 +305,11 @@ PackedPrimitive packGltfPrimitive({
   }
 
   final outVertexCount = srcOf.length;
-  final perVertex = hasJoints ? kSkinnedPerVertexSize : kUnskinnedPerVertexSize;
+  final perVertex = !hasJoints
+      ? kUnskinnedPerVertexSize
+      : influences > 4
+      ? kSkinned12PerVertexSize
+      : kSkinnedPerVertexSize;
   final stride = perVertex ~/ 4; // floats per vertex
   final out = Float32List(outVertexCount * stride);
 
@@ -299,15 +335,22 @@ PackedPrimitive packGltfPrimitive({
     out[o + 16] = tangents[s * 4 + 2];
     out[o + 17] = tangents[s * 4 + 3];
     if (hasJoints) {
-      final j = o + 18;
-      out[j + 0] = joints![s * 4 + 0];
-      out[j + 1] = joints[s * 4 + 1];
-      out[j + 2] = joints[s * 4 + 2];
-      out[j + 3] = joints[s * 4 + 3];
-      out[j + 4] = weights![s * 4 + 0];
-      out[j + 5] = weights[s * 4 + 1];
-      out[j + 6] = weights[s * 4 + 2];
-      out[j + 7] = weights[s * 4 + 3];
+      // One (joints, weights) vec4 pair per set: slots 0-3, then 4-7 and
+      // 8-11 on the 168-byte layout.
+      final sets = influences ~/ 4;
+      final width = influences;
+      for (var set = 0; set < sets; set++) {
+        final j = o + 18 + set * 8;
+        final src = s * width + set * 4;
+        out[j + 0] = joints![src + 0];
+        out[j + 1] = joints[src + 1];
+        out[j + 2] = joints[src + 2];
+        out[j + 3] = joints[src + 3];
+        out[j + 4] = weights![src + 0];
+        out[j + 5] = weights[src + 1];
+        out[j + 6] = weights[src + 2];
+        out[j + 7] = weights[src + 3];
+      }
     }
   }
 
@@ -355,6 +398,7 @@ PackedPrimitive packGltfPrimitive({
     indexCount: outIndexList.length,
     indices32Bit: outIndices32Bit,
     isSkinned: hasJoints,
+    skinInfluences: influences,
     sourceWindingFlipped: coordinatePolicy.sourceWindingFlipped,
     morphTargets: _packMorphTargets(
       primitive,
@@ -468,6 +512,90 @@ PackedMorphTargets? _packMorphTargets(
     normalDeltas: normalDeltas,
     tangentDeltas: tangentDeltas,
   );
+}
+
+/// Folds every authored `JOINTS_n`/`WEIGHTS_n` set of [primitive] into one
+/// per-vertex influence table, [joints0] and [weights0] (set 0, already read)
+/// first.
+///
+/// Each vertex's nonzero weights move into its leading slots in set order,
+/// so the trailing sets of a vertex with few influences stay zero and the
+/// shader skips them. A vertex with more than [kMaxSkinInfluences] keeps its
+/// largest, and one with none keeps its first joint so the shader's
+/// all-zero fallback binds the same joint it does for four. The table is
+/// [influences] wide: 4 when no vertex needs more, else
+/// [kMaxSkinInfluences].
+({Float32List joints, Float32List weights, int influences}) _packInfluenceSets(
+  GltfMeshPrimitive primitive,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData,
+  int vertexCount,
+  Float32List joints0,
+  Float32List weights0,
+) {
+  final jointSets = [joints0];
+  final weightSets = [weights0];
+  for (var set = 1; ; set++) {
+    final jointsIdx = primitive.attributes['JOINTS_$set'];
+    final weightsIdx = primitive.attributes['WEIGHTS_$set'];
+    if (jointsIdx == null || weightsIdx == null) break;
+    jointSets.add(_readVec4(jointsIdx, accessors, bufferViews, bufferData));
+    weightSets.add(_readVec4(weightsIdx, accessors, bufferViews, bufferData));
+  }
+  final authored = jointSets.length * 4;
+  final joints = Float32List(vertexCount * kMaxSkinInfluences);
+  final weights = Float32List(vertexCount * kMaxSkinInfluences);
+  final order = List<int>.filled(authored, 0);
+  var widest = 0;
+  var dropped = 0;
+  for (var v = 0; v < vertexCount; v++) {
+    var count = 0;
+    for (var i = 0; i < authored; i++) {
+      if (weightSets[i ~/ 4][v * 4 + i % 4] != 0) order[count++] = i;
+    }
+    if (count > widest) widest = count;
+    if (count > kMaxSkinInfluences) {
+      // Keep the largest weights, ties in set order.
+      final kept = order.sublist(0, count)
+        ..sort((a, b) {
+          final byWeight = weightSets[b ~/ 4][v * 4 + b % 4].compareTo(
+            weightSets[a ~/ 4][v * 4 + a % 4],
+          );
+          return byWeight != 0 ? byWeight : a.compareTo(b);
+        });
+      order.setRange(0, kMaxSkinInfluences, kept);
+      dropped++;
+      count = kMaxSkinInfluences;
+    }
+    final base = v * kMaxSkinInfluences;
+    if (count == 0) joints[base] = joints0[v * 4];
+    for (var k = 0; k < count; k++) {
+      final i = order[k];
+      joints[base + k] = jointSets[i ~/ 4][v * 4 + i % 4];
+      weights[base + k] = weightSets[i ~/ 4][v * 4 + i % 4];
+    }
+  }
+  if (dropped > 0) {
+    sceneLog(
+      'glTF primitive weights $dropped vertices to more than '
+      '$kMaxSkinInfluences joints (up to $widest); each keeps its '
+      '$kMaxSkinInfluences largest weights',
+    );
+  }
+  if (widest > 4) {
+    return (joints: joints, weights: weights, influences: kMaxSkinInfluences);
+  }
+  // No vertex needs more than one set: narrow to the 104-byte layout.
+  final narrowJoints = Float32List(vertexCount * 4);
+  final narrowWeights = Float32List(vertexCount * 4);
+  for (var v = 0; v < vertexCount; v++) {
+    for (var k = 0; k < 4; k++) {
+      narrowJoints[v * 4 + k] = joints[v * kMaxSkinInfluences + k];
+      narrowWeights[v * 4 + k] = weights[v * kMaxSkinInfluences + k];
+    }
+  }
+  return (joints: narrowJoints, weights: narrowWeights, influences: 4);
 }
 
 Float32List _readVec3(

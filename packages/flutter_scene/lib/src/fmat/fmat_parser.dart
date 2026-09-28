@@ -528,6 +528,13 @@ const _reservedNames = <String>{
   'shadow_map',
   'MaterialInputs',
   'VertexInputs',
+  // Skinned vertex inputs (the 12-influence variant adds the _1 and _2 sets).
+  'joints',
+  'weights',
+  'joints_1',
+  'weights_1',
+  'joints_2',
+  'weights_2',
   'vertex',
   'material',
   'material_params',
