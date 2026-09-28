@@ -27,10 +27,15 @@ class RigLogicRig {
         jointNames = _names(_backend, Kind.joints),
         blendShapeNames = _names(_backend, Kind.blendShapeChannels),
         animatedMapNames = _names(_backend, Kind.animatedMaps),
+        meshNames = _names(_backend, Kind.meshes),
+        axes = List.unmodifiable(_backend.axes()),
         jointParents = List.unmodifiable([
           for (var i = 0; i < _backend.count(Kind.joints); i++) _backend.jointParent(i),
         ]),
         lodCount = _backend.count(Kind.lods),
+        _lodMeshes = List.unmodifiable([
+          for (var lod = 0; lod < _backend.count(Kind.lods); lod++) List<int>.unmodifiable(_backend.lodMeshes(lod)),
+        ]),
         jointAttributeCount = _backend.count(Kind.jointAttributes),
         translationUnit = _backend.translationUnit() == 0 ? RigLogicLengthUnit.centimeters : RigLogicLengthUnit.meters,
         neutralJointValues = _backend.readNeutralJointValues(),
@@ -55,6 +60,19 @@ class RigLogicRig {
   final List<String> jointNames;
   final List<String> blendShapeNames;
   final List<String> animatedMapNames;
+  final List<String> meshNames;
+
+  /// The DNA's coordinate system: for x, y and z, where the axis points
+  /// (0 left, 1 right, 2 up, 3 down, 4 front, 5 back). MetaHumans use
+  /// [0, 2, 4], glTF's axes.
+  final List<int> axes;
+  final List<List<int>> _lodMeshes;
+
+  /// Indices into [meshNames] drawn at [lod].
+  List<int> lodMeshes(int lod) {
+    _checkLod(lod);
+    return _lodMeshes[lod];
+  }
 
   /// Parent joint index per joint, -1 for roots.
   final List<int> jointParents;

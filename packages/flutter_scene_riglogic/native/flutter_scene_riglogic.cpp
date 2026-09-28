@@ -73,6 +73,7 @@ struct FsrlRig {
     std::vector<std::vector<std::uint16_t>> lodMeshes;
     std::vector<std::int32_t> jointParents;
     std::int32_t translationUnit = 0;
+    std::int32_t axes[3] = {0, 2, 4};
     std::int32_t rotationUnit = 0;
 
     ~FsrlRig() {
@@ -147,6 +148,10 @@ FsrlRig* fsrl_rig_create(const uint8_t* dnaBytes, uint32_t length, int32_t calcu
         rig->jointParents.push_back(root ? -1 : static_cast<std::int32_t>(parent));
     }
     rig->translationUnit = static_cast<std::int32_t>(r->getTranslationUnit());
+    const auto system = r->getCoordinateSystem();
+    rig->axes[0] = static_cast<std::int32_t>(system.x);
+    rig->axes[1] = static_cast<std::int32_t>(system.y);
+    rig->axes[2] = static_cast<std::int32_t>(system.z);
     rig->rotationUnit = static_cast<std::int32_t>(r->getRotationUnit());
     return rig;
 }
@@ -204,6 +209,10 @@ int32_t fsrl_joint_parent(const FsrlRig* rig, uint32_t joint) {
 
 int32_t fsrl_rotation_type(const FsrlRig*) {
     return 1;
+}
+
+void fsrl_axes(const FsrlRig* rig, int32_t* out3) {
+    std::memcpy(out3, rig->axes, sizeof(rig->axes));
 }
 
 int32_t fsrl_translation_unit(const FsrlRig* rig) {

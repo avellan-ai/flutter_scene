@@ -26,6 +26,10 @@ external int _count(Pointer<_Rig> rig, int kind);
 external Pointer<Uint8> _name(Pointer<_Rig> rig, int kind, int index);
 @Native<Int32 Function(Pointer<_Rig>, Uint32)>(symbol: 'fsrl_joint_parent')
 external int _jointParent(Pointer<_Rig> rig, int joint);
+@Native<Void Function(Pointer<_Rig>, Pointer<Int32>)>(symbol: 'fsrl_axes')
+external void _axes(Pointer<_Rig> rig, Pointer<Int32> out3);
+@Native<Uint32 Function(Pointer<_Rig>, Uint32, Pointer<Uint16>, Uint32)>(symbol: 'fsrl_lod_meshes')
+external int _lodMeshes(Pointer<_Rig> rig, int lod, Pointer<Uint16> out, int capacity);
 @Native<Int32 Function(Pointer<_Rig>)>(symbol: 'fsrl_translation_unit')
 external int _translationUnit(Pointer<_Rig> rig);
 @Native<Int32 Function(Pointer<_Rig>)>(symbol: 'fsrl_rotation_unit')
@@ -101,6 +105,25 @@ class _NativeBackend implements RigBackend {
 
   @override
   int rotationUnit() => _rotationUnit(_rig);
+
+  @override
+  List<int> axes() {
+    final out = _alloc(12).cast<Int32>();
+    _axes(_rig, out);
+    final result = List<int>.of(out.asTypedList(3));
+    _free(out.cast());
+    return result;
+  }
+
+  @override
+  List<int> lodMeshes(int lod) {
+    final count = _lodMeshes(_rig, lod, nullptr, 0);
+    final out = _alloc(2 * count + 2).cast<Uint16>();
+    _lodMeshes(_rig, lod, out, count);
+    final result = List<int>.of(out.asTypedList(count));
+    _free(out.cast());
+    return result;
+  }
 
   @override
   void writeGuiControls(Float32List values) => _view(_guiControls(_rig), Kind.guiControls).setAll(0, values);

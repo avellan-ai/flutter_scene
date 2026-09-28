@@ -75,6 +75,9 @@ FSRL_API const char* fsrl_name(const FsrlRig* rig, int32_t kind, uint32_t index)
 FSRL_API int32_t fsrl_joint_parent(const FsrlRig* rig, uint32_t joint);
 // Rotation of the rig's joint outputs: 0 Euler angles, 1 quaternions.
 FSRL_API int32_t fsrl_rotation_type(const FsrlRig* rig);
+// The DNA's axes: tdm::axis_dir for x, y, z (left 0, right 1, up 2, down 3,
+// front 4, back 5), written to out3.
+FSRL_API void fsrl_axes(const FsrlRig* rig, int32_t* out3);
 // DNA units: 0 cm / 1 m, and 0 degrees / 1 radians.
 FSRL_API int32_t fsrl_translation_unit(const FsrlRig* rig);
 FSRL_API int32_t fsrl_rotation_unit(const FsrlRig* rig);

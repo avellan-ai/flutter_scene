@@ -100,6 +100,25 @@ class _WasmBackend implements RigBackend {
   int rotationUnit() => _e.rotationUnit(_r).toDartInt;
 
   @override
+  List<int> axes() {
+    final out = _e.alloc(12.toJS).toDartInt;
+    _e.axes(_r, out.toJS);
+    final result = List<int>.of(_e.memory.buffer.toDart.asInt32List(out, 3));
+    _e.free(out.toJS);
+    return result;
+  }
+
+  @override
+  List<int> lodMeshes(int lod) {
+    final count = _e.lodMeshes(_r, lod.toJS, 0.toJS, 0.toJS).toDartInt;
+    final out = _e.alloc((2 * count + 2).toJS).toDartInt;
+    _e.lodMeshes(_r, lod.toJS, out.toJS, count.toJS);
+    final result = List<int>.of(_e.memory.buffer.toDart.asUint16List(out, count));
+    _e.free(out.toJS);
+    return result;
+  }
+
+  @override
   void writeGuiControls(Float32List values) =>
       _view(_e.guiControls(_r).toDartInt, Kind.guiControls).setAll(0, values);
 
@@ -199,6 +218,10 @@ extension type _Exports(JSObject _) implements JSObject {
   external JSNumber name(JSNumber rig, JSNumber kind, JSNumber index);
   @JS('fsrl_joint_parent')
   external JSNumber jointParent(JSNumber rig, JSNumber joint);
+  @JS('fsrl_axes')
+  external void axes(JSNumber rig, JSNumber out3);
+  @JS('fsrl_lod_meshes')
+  external JSNumber lodMeshes(JSNumber rig, JSNumber lod, JSNumber out, JSNumber capacity);
   @JS('fsrl_translation_unit')
   external JSNumber translationUnit(JSNumber rig);
   @JS('fsrl_rotation_unit')

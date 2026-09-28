@@ -17,6 +17,7 @@ abstract final class Kind {
   static const animatedMapOutputs = 11;
   static const neutralJointValues = 12;
   static const jointAttributes = 13;
+  static const meshes = 14;
 }
 
 /// One loaded rig behind the C ABI, either in the native library or in the
@@ -27,6 +28,8 @@ abstract class RigBackend {
   String name(int kind, int index);
   int jointParent(int joint);
   int translationUnit();
+  List<int> axes();
+  List<int> lodMeshes(int lod);
   int rotationUnit();
 
   void writeGuiControls(Float32List values);
