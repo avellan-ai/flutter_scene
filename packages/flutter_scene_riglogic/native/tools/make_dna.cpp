@@ -56,6 +56,34 @@ float length(Vec v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
+// Row-major 3x3 rotation.
+struct Rot {
+    float m[9];
+};
+
+Rot multiply(const Rot& a, const Rot& b) {
+    Rot r{};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 3; ++k) r.m[3 * i + j] += a.m[3 * i + k] * b.m[3 * k + j];
+    return r;
+}
+
+Vec transposeTimes(const Rot& a, Vec v) {
+    return {a.m[0] * v.x + a.m[3] * v.y + a.m[6] * v.z, a.m[1] * v.x + a.m[4] * v.y + a.m[7] * v.z,
+            a.m[2] * v.x + a.m[5] * v.y + a.m[8] * v.z};
+}
+
+// Euler angles in degrees, rotation order xyz (x applied first): Rz Ry Rx.
+Rot euler(Vec degrees) {
+    const float k = 3.14159265358979f / 180.0f;
+    const float cx = std::cos(degrees.x * k), sx = std::sin(degrees.x * k);
+    const float cy = std::cos(degrees.y * k), sy = std::sin(degrees.y * k);
+    const float cz = std::cos(degrees.z * k), sz = std::sin(degrees.z * k);
+    const Rot rx{{1, 0, 0, 0, cx, -sx, 0, sx, cx}}, ry{{cy, 0, sy, 0, 1, 0, -sy, 0, cy}}, rz{{cz, -sz, 0, sz, cz, 0, 0, 0, 1}};
+    return multiply(rz, multiply(ry, rx));
+}
+
 struct Mesh {
     std::string name;
     std::vector<dna::Position> positions;
@@ -258,6 +286,7 @@ enum Side { kUpper, kLower, kAny };
 
 struct JointInfo {
     Vec world;
+    Rot rotation;  // world orientation in the neutral pose
     float boost;
     float radius;  // cm of skin this joint reaches
     Side side;
@@ -389,26 +418,41 @@ Rig metahumanScale() {
 
     // Joints: the 46 that matter first, so every LOD down to 3 keeps them.
     std::vector<JointInfo> info;
-    auto addJoint = [&](const std::string& name, u16 parent, Vec world, float boost, float radius, Side side) {
-        const Vec parentWorld = r.joints.empty() ? Vec{0, 0, 0} : info[parent].world;
+    // Joints are placed by world position. Every joint also gets a neutral
+    // orientation (MetaHuman's are rarely identities), so rotation deltas do
+    // not commute with the neutral pose and a runtime that composes them in
+    // the wrong order is caught; children's translations are expressed in
+    // their parent's rotated frame, which keeps the world positions.
+    auto addJoint = [&](const std::string& name, u16 parent, Vec world, float boost, float radius, Side side,
+                        Vec degrees) {
+        const bool root = r.joints.empty();
+        const Vec parentWorld = root ? Vec{0, 0, 0} : info[parent].world;
+        const Rot parentRotation = root ? euler({0, 0, 0}) : info[parent].rotation;
         r.joints.push_back(name);
         r.parents.push_back(parent);
-        const Vec local = world - parentWorld;
+        const Vec local = transposeTimes(parentRotation, world - parentWorld);
         r.neutralT.push_back({local.x, local.y, local.z});
-        r.neutralR.push_back({0.0f, 0.0f, 0.0f});
-        info.push_back({world, boost, radius, side});
+        r.neutralR.push_back({degrees.x, degrees.y, degrees.z});
+        info.push_back({world, multiply(parentRotation, euler(degrees)), boost, radius, side});
         return static_cast<u16>(r.joints.size() - 1);
     };
-    const u16 head = addJoint("FACIAL_C_Head", 0, {0, 0, 0}, 0.0f, 0.0f, kAny);
-    const u16 jaw = addJoint("FACIAL_C_Jaw", head, {0, -2.0f, -1.0f}, 0.0f, 0.0f, kLower);
+    // Leaves: a deterministic spread of orientations up to about 15 degrees.
+    auto leaf = [](std::size_t i) {
+        return Vec{static_cast<float>(static_cast<int>((i * 37) % 31) - 15), static_cast<float>(static_cast<int>((i * 53) % 29) - 14),
+                   static_cast<float>(static_cast<int>((i * 71) % 23) - 11)};
+    };
+    const u16 head = addJoint("FACIAL_C_Head", 0, {0, 0, 0}, 0.0f, 0.0f, kAny, {0, 3, 0});
+    // The jaw's roll tilts its opening axis by 5 degrees: neutral x delta and
+    // delta x neutral differ by several millimetres at the chin.
+    const u16 jaw = addJoint("FACIAL_C_Jaw", head, {0, -2.0f, -1.0f}, 0.0f, 0.0f, kLower, {0, 0, 5});
     std::vector<u16> upperLips, lowerLips, upperLids[2], lowerLids[2];
     for (int i = 0; i < 10; ++i) {
         const float x = -kMouthHalfWidth + 2 * kMouthHalfWidth * (i + 0.5f) / 10;
-        upperLips.push_back(addJoint("FACIAL_UpperLip_" + std::to_string(i), head, frontSurface(x, kMouthY + 0.35f), 3.0f, 1.3f, kUpper));
+        upperLips.push_back(addJoint("FACIAL_UpperLip_" + std::to_string(i), head, frontSurface(x, kMouthY + 0.35f), 3.0f, 1.3f, kUpper, leaf(r.joints.size())));
     }
     for (int i = 0; i < 10; ++i) {
         const float x = -kMouthHalfWidth + 2 * kMouthHalfWidth * (i + 0.5f) / 10;
-        lowerLips.push_back(addJoint("FACIAL_LowerLip_" + std::to_string(i), jaw, frontSurface(x, kMouthY - 0.35f), 3.0f, 1.3f, kLower));
+        lowerLips.push_back(addJoint("FACIAL_LowerLip_" + std::to_string(i), jaw, frontSurface(x, kMouthY - 0.35f), 3.0f, 1.3f, kLower, leaf(r.joints.size())));
     }
     for (int s = 0; s < 2; ++s) {
         const float side = s == 0 ? 1.0f : -1.0f;  // 0 is the character's left (+x)
@@ -416,12 +460,14 @@ Rig metahumanScale() {
         for (int i = 0; i < 6; ++i) {
             const float x = side * (kEyeX - kEyeHalfWidth + 2 * kEyeHalfWidth * (i + 0.5f) / 6);
             upperLids[s].push_back(addJoint(std::string("FACIAL_") + tag + "_EyelidUpper_" + std::to_string(i), head,
-                                            frontSurface(x, kEyeY + kEyeHalfHeight + 0.25f), 12.0f, 1.0f, kUpper));
+                                            frontSurface(x, kEyeY + kEyeHalfHeight + 0.25f), 12.0f, 1.0f, kUpper,
+                                            leaf(r.joints.size())));
         }
         for (int i = 0; i < 6; ++i) {
             const float x = side * (kEyeX - kEyeHalfWidth + 2 * kEyeHalfWidth * (i + 0.5f) / 6);
             lowerLids[s].push_back(addJoint(std::string("FACIAL_") + tag + "_EyelidLower_" + std::to_string(i), head,
-                                            frontSurface(x, kEyeY - kEyeHalfHeight - 0.25f), 8.0f, 0.7f, kUpper));
+                                            frontSurface(x, kEyeY - kEyeHalfHeight - 0.25f), 8.0f, 0.7f, kUpper,
+                                            leaf(r.joints.size())));
         }
     }
     const u16 semanticCount = static_cast<u16>(r.joints.size());
@@ -434,7 +480,7 @@ Rig metahumanScale() {
     }
     for (std::size_t i = 0; i < spots.size(); ++i) {
         const Side side = (spots[i].y < kMouthY && std::fabs(spots[i].x) < 6.0f) ? kLower : kUpper;
-        addJoint("FACIAL_Region_" + std::to_string(i), side == kLower ? jaw : head, spots[i], 1.0f, 2.0f, side);
+        addJoint("FACIAL_Region_" + std::to_string(i), side == kLower ? jaw : head, spots[i], 1.0f, 2.0f, side, leaf(r.joints.size()));
     }
 
     const char* semantic[] = {"CTRL_expressions.jawOpen", "CTRL_expressions.lipsPress", "CTRL_expressions.eyeBlinkL",
