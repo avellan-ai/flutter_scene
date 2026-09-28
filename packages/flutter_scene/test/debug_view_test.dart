@@ -258,9 +258,21 @@ void main() {
         expect(glsl, contains('#include <material_debug.glsl>'));
         expect(glsl, contains('vec4 MaterialOutput(MaterialInputs material)'));
         expect(glsl, contains('float debug_mode = DebugViewMode();'));
-        expect(glsl, contains('DebugViewSplit(DebugSurfaceOutput(material)'));
-        expect(glsl, contains('frag_color = MaterialOutput(material);'));
+        expect(
+          glsl,
+          contains('DebugViewSplit(DebugSurfaceOutput(material), lit)'),
+        );
+        // One call site: two inlined copies of the shaded output crash
+        // Apple's GPU shader compiler (macOS 27).
+        expect('MaterialOutput(material)'.allMatches(glsl).length, 1);
       }
+    });
+
+    test('the standard shader evaluates lighting at one call site', () {
+      final main = _readShader(
+        'flutter_scene_standard.frag',
+      ).split('void main()').last;
+      expect('EvaluateLighting(material)'.allMatches(main).length, 1);
     });
 
     test('a material can write the custom channel', () {
