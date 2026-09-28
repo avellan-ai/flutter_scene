@@ -32,35 +32,70 @@ Future<void> buildDnaScenes({
   List<int>? lods,
 }) async {
   final packageRoot = buildInput.packageRoot;
-  final root = Directory.fromUri(packageRoot.resolve(discoveryRoot));
-  if (!root.existsSync()) return;
-  buildOutput.dependencies.add(root.uri);
+  final packagePath = packageRoot.toFilePath(windows: false);
   final sources = <File>[];
-  for (final entity in root.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) buildOutput.dependencies.add(entity.uri);
-    if (entity is File && entity.path.endsWith('.dna')) sources.add(entity);
+  var watched = Directory.fromUri(packageRoot.resolve(discoveryRoot));
+  if (watched.existsSync()) {
+    // A directory dependency is hashed as the names of its direct children,
+    // so every directory the listing walks is declared.
+    buildOutput.dependencies.add(watched.uri);
+    for (final entity in watched.listSync(recursive: true, followLinks: false)) {
+      if (entity is Directory) buildOutput.dependencies.add(entity.uri);
+      if (entity is File && entity.path.endsWith('.dna')) sources.add(entity);
+    }
+  } else {
+    // Watch the nearest existing parent, so creating the root reruns the hook.
+    while (!watched.existsSync() && watched.parent.path != watched.path) {
+      watched = watched.parent;
+    }
+    buildOutput.dependencies.add(watched.uri);
   }
-  if (sources.isEmpty) return;
-
-  final ourRoot = (await Isolate.resolvePackageUri(Uri.parse('package:flutter_scene_riglogic/')))!.resolve('../');
-  final library = await buildNativeLibrary(
-    packageRoot: ourRoot,
-    buildDir: buildInput.outputDirectoryShared.resolve('flutter_scene_riglogic/host-${hostOS.name}-${hostArchitecture.name}/'),
-    os: hostOS,
-    architecture: hostArchitecture,
-  );
-  buildOutput.dependencies.addAll(nativeSourceDependencies(ourRoot));
+  sources.sort((a, b) => a.path.compareTo(b.path));
 
   final generated = <String>[];
-  for (final source in sources) {
-    final relative = source.uri.path.substring(packageRoot.path.length);
-    final sceneId = dnaSceneId(relative);
-    final output = File.fromUri(packageRoot.resolve('$sceneId.glb'));
-    await output.parent.create(recursive: true);
-    final dna = readDnaOnHost(library.toFilePath(), await source.readAsBytes());
-    await output.writeAsBytes(dnaToGlb(dna, name: relative, lods: lods));
-    buildOutput.dependencies.add(source.uri);
-    generated.add('$sceneId.glb');
+  if (sources.isNotEmpty) {
+    final ourRoot = (await Isolate.resolvePackageUri(Uri.parse('package:flutter_scene_riglogic/')))!.resolve('../');
+    final library = await buildNativeLibrary(
+      packageRoot: ourRoot,
+      buildDir: buildInput.outputDirectoryShared.resolve('flutter_scene_riglogic/host-${hostOS.name}-${hostArchitecture.name}/'),
+      os: hostOS,
+      architecture: hostArchitecture,
+    );
+    buildOutput.dependencies.addAll(nativeSourceDependencies(ourRoot));
+
+    for (final source in sources) {
+      // Decoded and package-relative, as the app names the asset.
+      final relative = source.uri.toFilePath(windows: false).substring(packagePath.length);
+      final sceneId = dnaSceneId(relative);
+      final output = File.fromUri(packageRoot.resolve(Uri(path: '$sceneId.glb').path));
+      final dna = readDnaOnHost(library.toFilePath(), await source.readAsBytes());
+      final glb = dnaToGlb(dna, name: relative, lods: lods);
+      // An unchanged conversion keeps its file, so the scene import that
+      // depends on it stays cached.
+      if (!output.existsSync() || !_same(output.readAsBytesSync(), glb)) {
+        await output.parent.create(recursive: true);
+        await output.writeAsBytes(glb);
+      }
+      buildOutput.dependencies.add(source.uri);
+      generated.add('$sceneId.glb');
+    }
+  }
+
+  // Conversions of DNA files that are gone would otherwise stay registered.
+  final owned = Directory.fromUri(packageRoot.resolve('$dnaSceneRoot/'));
+  if (owned.existsSync()) {
+    final keep = {for (final path in generated) packageRoot.resolve(Uri(path: path).path).toFilePath()};
+    for (final file in owned.listSync(recursive: true).whereType<File>()) {
+      if (file.path.endsWith('.glb') && !keep.contains(file.path)) file.deleteSync();
+    }
   }
   buildScenes(buildInput: buildInput, buildOutput: buildOutput, inputFilePaths: generated);
+}
+
+bool _same(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

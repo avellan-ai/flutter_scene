@@ -136,23 +136,32 @@ DnaHostData readDnaOnHost(String libraryPath, Uint8List dna) {
 
   try {
     final conv = allocate<Int32>(6 * 4);
-    conventions(handle, conv);
-    final axes = [conv[0], conv[1], conv[2]];
-    final translationUnit = conv[3];
-    free(conv.cast());
+    final List<int> axes;
+    final int translationUnit;
+    try {
+      conventions(handle, conv);
+      axes = [conv[0], conv[1], conv[2]];
+      translationUnit = conv[3];
+    } finally {
+      free(conv.cast());
+    }
 
     final jointCount = dnaCount(handle, 2);
     final neutralCount = rigCount(rig, 12);
     final neutral = Float32List.fromList(rigNeutral(rig).asTypedList(neutralCount));
 
     final lodCount = dnaCount(handle, 0);
-    final lodBuffer = allocate<Uint16>(2 * 1024);
     final lods = <List<int>>[];
     for (var lod = 0; lod < lodCount; lod++) {
-      final n = lodMeshes(handle, lod, lodBuffer, 1024);
-      lods.add(List<int>.of(lodBuffer.asTypedList(n < 1024 ? n : 1024)));
+      final n = lodMeshes(handle, lod, nullptr, 0);
+      final buffer = allocate<Uint16>(2 * n + 2);
+      try {
+        lodMeshes(handle, lod, buffer, n);
+        lods.add(List<int>.of(buffer.asTypedList(n)));
+      } finally {
+        free(buffer.cast());
+      }
     }
-    free(lodBuffer.cast());
 
     final meshes = <DnaHostMesh>[];
     for (var m = 0; m < dnaCount(handle, 1); m++) {
@@ -174,26 +183,32 @@ DnaHostData readDnaOnHost(String libraryPath, Uint8List dna) {
       const faceCapacity = 256;
       final faceBuffer = allocate<Uint32>(4 * faceCapacity);
       final faces = <Uint32List>[];
-      for (var f = 0; f < meshCount(handle, m, 4); f++) {
-        final n = meshFace(handle, m, f, faceBuffer, faceCapacity);
-        if (n > faceCapacity) throw FormatException('Face $f of mesh $m has $n corners');
-        faces.add(Uint32List.fromList(faceBuffer.asTypedList(n)));
+      try {
+        for (var f = 0; f < meshCount(handle, m, 4); f++) {
+          final n = meshFace(handle, m, f, faceBuffer, faceCapacity);
+          if (n > faceCapacity) throw FormatException('Face $f of mesh $m has $n corners');
+          faces.add(Uint32List.fromList(faceBuffer.asTypedList(n)));
+        }
+      } finally {
+        free(faceBuffer.cast());
       }
-      free(faceBuffer.cast());
 
       const influenceCapacity = 64;
       final weightBuffer = allocate<Float>(4 * influenceCapacity);
       final jointBuffer = allocate<Uint16>(2 * influenceCapacity);
       final weights = <Float32List>[];
       final joints = <Uint16List>[];
-      for (var v = 0; v < positionCount; v++) {
-        final n = meshSkin(handle, m, v, weightBuffer, jointBuffer, influenceCapacity);
-        if (n > influenceCapacity) throw FormatException('Vertex $v of mesh $m has $n influences');
-        weights.add(Float32List.fromList(weightBuffer.asTypedList(n)));
-        joints.add(Uint16List.fromList(jointBuffer.asTypedList(n)));
+      try {
+        for (var v = 0; v < positionCount; v++) {
+          final n = meshSkin(handle, m, v, weightBuffer, jointBuffer, influenceCapacity);
+          if (n > influenceCapacity) throw FormatException('Vertex $v of mesh $m has $n influences');
+          weights.add(Float32List.fromList(weightBuffer.asTypedList(n)));
+          joints.add(Uint16List.fromList(jointBuffer.asTypedList(n)));
+        }
+      } finally {
+        free(weightBuffer.cast());
+        free(jointBuffer.cast());
       }
-      free(weightBuffer.cast());
-      free(jointBuffer.cast());
 
       meshes.add(DnaHostMesh(
         name: string(meshName(handle, m)),

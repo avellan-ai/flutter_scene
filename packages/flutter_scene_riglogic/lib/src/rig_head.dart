@@ -35,15 +35,20 @@ class RigLogicHead {
     await RigLogicRig.ensureInitialized();
     final data = await (bundle ?? rootBundle).load(dnaAsset);
     final rig = RigLogicRig.fromDna(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes), calculation: calculation);
-    final node = await loadScene(dnaSceneId(dnaAsset));
-    return RigLogicHead._(
-      node,
-      rig,
-      [for (final name in rig.jointNames) node.getChildByName(name)],
-      [for (final name in rig.meshNames) node.getChildByName(name)],
-      _engineAxes(rig.axes),
-      rig.translationUnit == RigLogicLengthUnit.centimeters ? 0.01 : 1.0,
-    );
+    try {
+      final node = await loadScene(dnaSceneId(dnaAsset), bundle: bundle);
+      return RigLogicHead._(
+        node,
+        rig,
+        [for (final name in rig.jointNames) node.getChildByName(name)],
+        [for (final name in rig.meshNames) node.getChildByName(name)],
+        _engineAxes(rig.axes),
+        rig.translationUnit == RigLogicLengthUnit.centimeters ? 0.01 : 1.0,
+      );
+    } catch (_) {
+      rig.dispose();
+      rethrow;
+    }
   }
 
   final Node node;

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_scene_riglogic/flutter_scene_riglogic.dart';
+import 'package:flutter_scene_riglogic/riglogic.dart';
 import 'package:test/test.dart';
 
 // test/fixtures/fixture.dna is written by native/tools/make_dna.cpp

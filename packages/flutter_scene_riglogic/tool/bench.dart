@@ -4,7 +4,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter_scene_riglogic/flutter_scene_riglogic.dart';
+import 'package:flutter_scene_riglogic/riglogic.dart';
 
 void main(List<String> args) {
   final dna = File(args.single).readAsBytesSync();
