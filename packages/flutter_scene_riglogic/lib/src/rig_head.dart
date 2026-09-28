@@ -157,7 +157,7 @@ class RigLogicHead {
 
 /// Updates a [RigLogicHead] once per frame. Attach it to any node.
 class RigLogicComponent extends Component {
-  RigLogicComponent(this.head, {this.beforeUpdate});
+  RigLogicComponent(this.head, {this.beforeUpdate, this.afterUpdate});
 
   final RigLogicHead head;
 
@@ -165,9 +165,14 @@ class RigLogicComponent extends Component {
   /// controls.
   final void Function(double deltaSeconds)? beforeUpdate;
 
+  /// Called after the skeleton is posed (for example to read
+  /// [RigLogicHead.lastUpdateMicros] for this frame).
+  final void Function()? afterUpdate;
+
   @override
   void update(double deltaSeconds) {
     beforeUpdate?.call(deltaSeconds);
     head.update();
+    afterUpdate?.call();
   }
 }

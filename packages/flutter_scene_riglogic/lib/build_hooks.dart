@@ -66,6 +66,11 @@ Future<void> buildDnaScenes({
     for (final source in sources) {
       // Decoded and package-relative, as the app names the asset.
       final relative = source.uri.toFilePath(windows: false).substring(packagePath.length);
+      // buildScenes resolves its inputs as URI references, where these
+      // would start a query or fragment or read as an escape.
+      if (relative.contains(RegExp('[#?%]'))) {
+        throw FormatException('DNA file names cannot contain #, ? or %: $relative');
+      }
       final sceneId = dnaSceneId(relative);
       final output = File.fromUri(packageRoot.resolve(Uri(path: '$sceneId.glb').path));
       final dna = readDnaOnHost(library.toFilePath(), await source.readAsBytes());
@@ -82,10 +87,13 @@ Future<void> buildDnaScenes({
   }
 
   // Conversions of DNA files that are gone would otherwise stay registered.
-  final owned = Directory.fromUri(packageRoot.resolve('$dnaSceneRoot/'));
+  // Only this discovery root's share of the output tree is pruned, so calls
+  // for other roots keep theirs.
+  final root = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
+  final owned = Directory.fromUri(packageRoot.resolve(Uri(path: '$dnaSceneRoot/$root').path));
   if (owned.existsSync()) {
-    final keep = {for (final path in generated) packageRoot.resolve(Uri(path: path).path).toFilePath()};
-    for (final file in owned.listSync(recursive: true).whereType<File>()) {
+    final keep = {for (final path in generated) File.fromUri(packageRoot.resolve(Uri(path: path).path)).path};
+    for (final file in owned.listSync(recursive: true, followLinks: false).whereType<File>()) {
       if (file.path.endsWith('.glb') && !keep.contains(file.path)) file.deleteSync();
     }
   }
