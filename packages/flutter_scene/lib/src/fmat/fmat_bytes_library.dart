@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show radianceCubeEntryName, sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/fmat/material_registry.dart';
+import 'package:flutter_scene/src/debug_pipeline_log.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
@@ -62,7 +63,7 @@ final class FmatBytesLibrary {
     if (shader == null) {
       throw StateError('Shader entry "$entryName" is missing from the bundle.');
     }
-    return shader;
+    return nameShader(shader, entryName);
   }
 
   // Resolves the sidecar's variant -> entry-name map against the bundle.

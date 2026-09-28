@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
+import 'package:flutter_scene/src/debug_pipeline_log.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 gpu.ShaderLibrary? _baseShaderLibrary;
@@ -105,6 +106,7 @@ Future<void> _loadBaseShaderLibrary(AssetBundle? bundle) async {
     throw Exception(baseShaderBundleUnusableMessage(key));
   }
   _baseShaderLibrary = lib;
+  nameBaseShaders(lib);
 }
 
 /// Drops the cached library and any retained load failure, so a test can drive

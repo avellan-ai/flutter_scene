@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter_scene/src/debug_pipeline_log.dart';
+
 import 'package:flutter/foundation.dart'
     show debugPrint, internal, kDebugMode, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -404,6 +406,12 @@ gpu.RenderPipeline resolvePipeline(
   final cached = _pipelineCache[key];
   if (cached != null) return cached;
   activeRenderCounters.pipelineBuilds++;
+  logPipelineBuild(
+    vertexShader,
+    fragmentShader,
+    vertexLayoutId(vertexLayout),
+    debugContext,
+  );
   final stopwatch = kDebugMode || profileRendering
       ? (Stopwatch()..start())
       : null;
