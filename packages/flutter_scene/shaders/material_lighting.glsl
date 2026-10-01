@@ -920,7 +920,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       vec3 spec_color = reflectance * t2.x + (vec3(1.0) - reflectance) * t2.y;
       direct += radiance * (window * window) * facing *
                 (spec_color * spec_shape * material.specular +
-                 albedo * (1.0 - metallic) * diff_shape);
+                 diffuse_color * diff_shape);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
       // The clearcoat's own LTC lobe over the same rect, with the coat's
       // normal and roughness and the dielectric F0 of 0.04. The base layer's
