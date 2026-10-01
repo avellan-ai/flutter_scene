@@ -53,6 +53,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _environmentLighting = metadata['environment_lighting'] != false,
        _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata),
        _vertexAttributes = VertexAttributeSchema.fromMetadata(metadata),
+       _vertexSamplerNames = List<String>.from(
+         metadata['vertex_samplers'] as List? ?? const [],
+       ),
        _usesPlanarReflection = parsePlanarReflectionInput(
          metadata['engine_inputs'],
        ),
@@ -336,6 +339,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   InstanceAttributeSchema? get instanceAttributes => _instanceAttributes;
 
   VertexAttributeSchema? _vertexAttributes;
+  List<String> _vertexSamplerNames;
 
   @override
   VertexAttributeSchema? get vertexAttributes => _vertexAttributes;
@@ -363,7 +367,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // MATERIAL_PARAMS_KEEP_ALIVE in the emitter) so it survives compilation
     // even when Vertex() reads no parameter; binding an optimized-out block
     // crashes the Metal backend.
-    parameters.bindUniformBlock(pass, vertexShader, transientsBuffer);
+    parameters.bind(
+      pass,
+      vertexShader,
+      transientsBuffer,
+      samplerNames: _vertexSamplerNames,
+    );
     // Bind the keep-alive block (name must match kVertexKeepAliveBlock in the
     // emitter) to zero: the generated shader multiplies the mesh inputs by it
     // so the optimizer cannot strip a declared attribute when a Vertex() hook
@@ -408,6 +417,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // widened vertex layouts and instance buffers keyed on the old one.
     _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata);
     _vertexAttributes = VertexAttributeSchema.fromMetadata(metadata);
+    _vertexSamplerNames = List<String>.from(
+      metadata['vertex_samplers'] as List? ?? const [],
+    );
     _usesPlanarReflection = parsePlanarReflectionInput(
       metadata['engine_inputs'],
     );

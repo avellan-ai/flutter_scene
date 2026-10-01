@@ -153,6 +153,11 @@ void main() {
   // runtime binds the block to the vertex stage unconditionally.
   gl_Position.x += vertex_keep_alive.keep_alive.x * MATERIAL_PARAMS_KEEP_ALIVE;
 #endif
+#ifdef MATERIAL_SAMPLERS_KEEP_ALIVE
+  if (vertex_keep_alive.keep_alive.x != 0.0) {
+    gl_Position.x += vertex_keep_alive.keep_alive.x * MATERIAL_SAMPLERS_KEEP_ALIVE;
+  }
+#endif
 #ifdef MATERIAL_ATTRIBUTES_KEEP_ALIVE
   // Keep declared custom attributes live even when Vertex() reads none; a
   // stripped input breaks reflection and the pipeline's vertex layout.

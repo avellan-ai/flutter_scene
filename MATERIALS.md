@@ -377,6 +377,30 @@ space after `Vertex()` returns) and `world_normal` to change the shading normal.
 The `material_params.*` values are available in `Vertex()` just as in
 `Surface()`, so one parameter drives both stages.
 
+To sample a material texture in `Vertex()`, list its parameter name in the
+material's `vertex_samplers` list. The list accepts declared `sampler2d` and
+`samplercube` parameters and requires a `vertex` block. Both stages share the
+texture and sampler state set through `MaterialParameters.setTexture`.
+
+```
+material {
+  name: "HeightField",
+  vertex_samplers: [height_field],
+  parameters: [ { type: sampler2d, name: height_field } ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += textureLod(height_field, vertex.uv, 0.0).r;
+  }
+}
+```
+
+Use an explicit LOD because vertex invocations have no screen derivatives.
+The selected samplers are also bound for custom depth and shadow variants,
+so displacement is consistent across passes. Each consumes a vertex texture
+unit; keep within the target backend's stage and combined limits. Material
+samplers are fragment-only unless listed here.
+
 ```glsl
 // A world curve: bend geometry down with distance from the camera.
 void Vertex(inout VertexInputs vertex) {

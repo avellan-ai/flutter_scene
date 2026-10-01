@@ -571,6 +571,7 @@ FmatMaterial _build(
     'instance_attributes',
     'requires',
     'engine_inputs',
+    'vertex_samplers',
     'scene_color_reach',
     'environment_lighting',
     'directional_light',
@@ -707,6 +708,35 @@ FmatMaterial _build(
   }
 
   final parameters = _buildParameters(tree['parameters'], fileName);
+  final vertexSamplers = <String>[];
+  final vertexSamplersRaw = tree['vertex_samplers'];
+  if (vertexSamplersRaw != null) {
+    if (vertexSamplersRaw is! List || vertex == null) {
+      throw FmatException(
+        '`vertex_samplers` must be a list on a material with a vertex block.',
+        fileName: fileName,
+      );
+    }
+    final samplerNames = parameters
+        .where((parameter) => parameter.isSampler)
+        .map((parameter) => parameter.name)
+        .toSet();
+    for (final entry in vertexSamplersRaw) {
+      if (entry is! _Ident || !samplerNames.contains(entry.name)) {
+        throw FmatException(
+          '`vertex_samplers` must name declared sampler parameters.',
+          fileName: fileName,
+        );
+      }
+      if (vertexSamplers.contains(entry.name)) {
+        throw FmatException(
+          'Duplicate vertex sampler `${entry.name}`.',
+          fileName: fileName,
+        );
+      }
+      vertexSamplers.add(entry.name);
+    }
+  }
   final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
   final attributes = _buildAttributes(
     tree['attributes'],
@@ -913,6 +943,7 @@ FmatMaterial _build(
     fragmentSourceLine: body.startLine,
     vertexSource: vertex?.content,
     vertexSourceLine: vertex?.startLine ?? 0,
+    vertexSamplers: vertexSamplers,
     varyings: varyings,
     attributes: attributes,
     instanceAttributes: instanceAttributes,

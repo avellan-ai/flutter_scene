@@ -290,6 +290,7 @@ class FmatMaterial {
     required this.fragmentSourceLine,
     this.vertexSource,
     this.vertexSourceLine = 0,
+    this.vertexSamplers = const [],
     this.varyings = const [],
     this.attributes = const [],
     this.instanceAttributes = const [],
@@ -362,6 +363,10 @@ class FmatMaterial {
   /// The 1-based line where [vertexSource] begins, for the `#line` directive.
   /// Zero when there is no vertex stage.
   final int vertexSourceLine;
+
+  /// Material sampler names also available to the custom vertex stage.
+  /// Their textures and sampler state are shared with the fragment stage.
+  final List<String> vertexSamplers;
 
   /// Whether this material customizes the vertex stage.
   bool get hasVertexStage => vertexSource != null;

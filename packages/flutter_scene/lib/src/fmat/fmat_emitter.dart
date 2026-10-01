@@ -84,9 +84,8 @@ List<FmatInstanceAttribute> forwardedInstanceAttributes(FmatMaterial material) {
   if (material.instanceAttributes.isEmpty) return const [];
   return [
     for (final a in material.instanceAttributes)
-      if (RegExp(
-        '\\b${RegExp.escape(a.accessorName)}\\b',
-      ).hasMatch(material.fragmentSource))
+      if (RegExp('\\b${RegExp.escape(a.accessorName)}\\b')
+          .hasMatch(material.fragmentSource))
         a,
   ];
 }
@@ -326,7 +325,8 @@ String emitFragmentGlsl(
   }
 
   for (final p in samplers) {
-    sb.writeln('uniform ${p.type.glslType} ${p.name};');
+    final precision = material.vertexSamplers.contains(p.name) ? 'highp ' : '';
+    sb.writeln('uniform $precision${p.type.glslType} ${p.name};');
   }
   if (samplers.isNotEmpty) sb.writeln();
 
@@ -767,6 +767,23 @@ String _emitVertexVariant(
   sb.writeln('$kVertexKeepAliveInstance;');
   sb.writeln();
 
+  final vertexSamplers = material.samplerParameters
+      .where((parameter) => material.vertexSamplers.contains(parameter.name))
+      .toList();
+  for (final parameter in vertexSamplers) {
+    sb.writeln('uniform highp ${parameter.type.glslType} ${parameter.name};');
+  }
+  if (vertexSamplers.isNotEmpty) {
+    final terms = vertexSamplers.map((parameter) {
+      final coordinate = parameter.type == FmatType.samplerCube
+          ? 'vec3(0.0, 0.0, 1.0)'
+          : 'vec2(0.0)';
+      return 'textureLod(${parameter.name}, $coordinate, 0.0).x';
+    });
+    sb.writeln('#define MATERIAL_SAMPLERS_KEEP_ALIVE (${terms.join(' + ')})');
+  }
+  sb.writeln();
+
   // The material supplies its own Vertex(), so suppress the no-op hook in
   // material_vertex.glsl.
   sb.writeln('#define HAS_MATERIAL_VERTEX');
@@ -967,6 +984,8 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
         for (final variant in kVertexVariants.keys)
           variant: vertexVariantEntryName(material, variant),
       },
+    if (material.vertexSamplers.isNotEmpty)
+      'vertex_samplers': material.vertexSamplers,
     'parameters': [
       for (final p in material.uniformParameters)
         <String, Object?>{

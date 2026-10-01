@@ -351,9 +351,8 @@ class MaterialParameters {
   /// a re-realized material onto the live instance in place.
   void copyStateFrom(MaterialParameters other) {
     if (other._block.lengthInBytes == _block.lengthInBytes) {
-      Uint8List.sublistView(
-        _block,
-      ).setAll(0, Uint8List.sublistView(other._block));
+      Uint8List.sublistView(_block)
+          .setAll(0, Uint8List.sublistView(other._block));
     }
     _overridden
       ..clear()
@@ -582,9 +581,7 @@ class MaterialParameters {
   bool get hasAnyParameters => hasUniformBlock || _samplers.isNotEmpty;
 
   /// Binds only the `MaterialParams` uniform block on [shader] into [pass],
-  /// not the sampler parameters. Used to make the block available to the
-  /// vertex stage, whose generated shader declares the block but not the
-  /// material's samplers.
+  /// not the sampler parameters.
   void bindUniformBlock(
     gpu.RenderPass pass,
     gpu.Shader shader,
@@ -598,17 +595,19 @@ class MaterialParameters {
     }
   }
 
-  /// Binds the uniform block and the sampler parameters on [shader] into [pass].
+  /// Binds the uniform block and selected samplers on [shader] into [pass].
+  /// Omitting [samplerNames] binds every material sampler.
   void bind(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    TransientWriter transientsBuffer,
-  ) {
+    TransientWriter transientsBuffer, {
+    Iterable<String>? samplerNames,
+  }) {
     bindUniformBlock(pass, shader, transientsBuffer);
-    for (final entry in _samplers.entries) {
-      final slot = entry.value;
+    for (final name in samplerNames ?? _samplers.keys) {
+      final slot = _samplers[name]!;
       pass.bindTexture(
-        shader.getUniformSlot(entry.key),
+        shader.getUniformSlot(name),
         slot.texture ?? _placeholder(slot.defaultPlaceholder),
         sampler: slot.sampler ?? _defaultSampler,
       );
