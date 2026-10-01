@@ -134,6 +134,7 @@ const _frameworkShaderFiles = <String>[
   'noise.glsl',
   'normals.glsl',
   'octahedral.glsl',
+  'parallax.glsl',
   'pbr.glsl',
   'scene_inputs.glsl',
   'smaa.glsl',

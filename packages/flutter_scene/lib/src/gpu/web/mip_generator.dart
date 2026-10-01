@@ -58,7 +58,7 @@ void main() {
     float len = length(n);
     n = len > 1e-6 ? n / len : vec3(0.0, 0.0, 1.0);
     rgb = n * 0.5 + 0.5;
-    alpha = 1.0;
+    // Normal alpha may carry a parallax height field. Keep its box average.
   } else {
     rgb = (a.rgb + b.rgb + c.rgb + d.rgb) * 0.25;
   }

@@ -301,7 +301,24 @@ vec4 GetVertexColor();     // interpolated per-vertex color (white if none)
 The standard GLSL helpers from the engine's shader library are `#include`d for
 you and available in `Surface()`: `SRGBToLinear`, the Cook-Torrance BRDF pieces
 (`FresnelSchlick`, `DistributionGGX`, ...), `PerturbNormal` (normal-map
-perturbation), and `SamplePrefilteredRadiance`.
+perturbation), and `SamplePrefilteredRadiance`. Include `<parallax.glsl>` in a
+custom fragment stage to add `ParallaxOcclusionOffset` and
+`PerturbParallaxNormal` only to that material.
+
+**Parallax occlusion** reads its height field from the alpha channel of a
+normal texture (1 at the surface, 0 at the deepest point), the packing
+a custom material can share with its normal map, so it costs no sampler against
+the budget below. `ParallaxOcclusionOffset(normal_tex, GetWorldNormal(),
+v_viewvector, uv, scale, steps, uv_bounds)` marches the view ray through `steps` layers
+and returns the UV offset to add to `uv` for every texture lookup of the
+surface, with `scale` a vec2 depth of the 0 level in UV units. `uv_bounds` is
+the allowed min-U/min-V/max-U/max-V rectangle, so atlas tracing cannot enter
+an adjacent tile. Steps are clamped to 1–64. Sample the normal
+map at the displaced coordinates but pass the undisplaced ones as
+`PerturbParallaxNormal`'s `frame_uv`, so the tangent frame's derivatives stay
+smooth. Meshes without tangents work; the frame falls back to screen-space
+derivatives like the normal map's. Wrap the call in `if (scale.x > 0.0)` so a
+material with parallax off pays nothing.
 
 For a `lit` material, fill `base_color` / `metallic` / `roughness` / `normal` /
 `occlusion` / `emissive` and the engine produces the lit color (image-based
