@@ -86,5 +86,29 @@ class PlanarReflectionCapturePass extends RenderGraphPass {
     );
     _scenePass.execute(inner);
     SceneColorBlitPass(output: _output).execute(inner);
+    var source = blackboard.require<gpu.Texture>(kSceneColorBlackboardKey);
+    for (var mip = 1; mip < _output.mipLevelCount; mip++) {
+      final reduced = _pool.acquire(
+        TransientTextureDescriptor.color(
+          width: (_output.width >> mip).clamp(1, _output.width),
+          height: (_output.height >> mip).clamp(1, _output.height),
+          format: gpu.PixelFormat.r16g16b16a16Float,
+          debugName: 'PlanarReflectionMip$mip',
+        ),
+      );
+      // Keep the sample source separate from every output attachment:
+      // sampling another level of the same texture is a WebGL feedback loop.
+      SceneColorBlitPass(
+        input: source,
+        output: reduced,
+        linearFilter: true,
+      ).execute(inner);
+      SceneColorBlitPass(
+        input: reduced,
+        output: _output,
+        outputMipLevel: mip,
+      ).execute(inner);
+      source = reduced;
+    }
   }
 }

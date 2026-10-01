@@ -36,9 +36,6 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 /// rendered to a `RenderTexture` composite the previous frame's capture, and
 /// additional views reuse the primary view's capture.
 /// {@category Rendering}
-// TODO(planar-blur): blur the capture with a small mip chain keyed by the
-// surface roughness, plus a maxRoughness cutoff that skips the capture
-// entirely; today the capture is the sharp mirror term.
 // TODO(planar-depth-fade): fade the reflection by the reflected hit's
 // distance from the plane so tall reflections soften like SSR's range fade.
 // TODO(planar-multiview): capture per consuming view; today secondary views
@@ -47,6 +44,7 @@ class PlanarReflectorComponent extends Component {
   /// Creates a planar reflector for the mirror surface at the owning node.
   PlanarReflectorComponent({
     this.resolutionScale = 0.5,
+    this.mipLevelCount = 1,
     this.layerMask = kRenderLayerAll,
     this.reflectionGroupId = -1,
     this.clipBias = 1e-3,
@@ -63,6 +61,15 @@ class PlanarReflectorComponent extends Component {
   /// knob. Setting [enabled] false pauses capturing entirely and the
   /// surface falls back to its base look.
   double resolutionScale;
+
+  /// Number of filtered capture levels, including the full-resolution base.
+  /// Defaults to one (no filtering work). Four enables LODs 0 through 3
+  /// through `GetPlanarReflection(lod)` or an explicit texture LOD sample.
+  /// Each additional level costs two fullscreen draws and pooled HDR scratch
+  /// storage. This is a box-filtered image, not a GGX roughness convolution.
+  /// Clamped to the capture size; backends without working mip sampling use
+  /// one level. The first reflector supplies this setting in a shared group.
+  int mipLevelCount;
 
   /// A bitmask selecting which node layers render into the capture, the
   /// same selection a `RenderView.layerMask` makes. Defaults to every

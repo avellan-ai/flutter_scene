@@ -159,6 +159,7 @@ vec3  GetSceneWorldPosition(vec2 uv_offset);  // that surface's world position
 float GetFragmentViewDepth();         // this fragment's own linear depth
 float GetTime();                      // engine seconds, for animation
 vec4  GetPlanarReflection();          // mirrored capture at this fragment
+vec4  GetPlanarReflection(float lod); // filtered capture; LOD clamped to available levels
 ```
 
 `GetSceneWorldPosition` unprojects the opaque surface behind the fragment (it
@@ -173,6 +174,14 @@ when a capture is bound this draw and 0 otherwise (no reflector routed one,
 or the draw is inside a capture, which never recurses). Blend toward the
 environment reflection at `a == 0` so the surface degrades gracefully; the
 worked mirror lives at `examples/flutter_app/assets/planar_mirror.fmat`.
+`PlanarReflectorComponent(mipLevelCount: 4)` enables three progressively
+smaller linear-HDR levels. The default is one level, with no filtering work.
+The explicit LOD accessor clamps to the available chain; direct distorted
+samples can use `textureLod(planar_reflection, uv, lod)` with LOD clamped to
+`planar_reflection_info.params.y`. The chain uses successive bilinear
+downsamples, not a GGX roughness convolution. Each additional level adds two
+fullscreen draws and pooled HDR scratch storage; unsupported mip-sampling
+backends fall back to the base level.
 Surfaces sampling a planar capture are effectively excluded from
 screen-space reflections (their depth-prepass roughness reads fully rough),
 so the two do not double up.

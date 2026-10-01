@@ -543,6 +543,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   static final gpu.SamplerOptions _planarReflectionSampler = gpu.SamplerOptions(
     minFilter: gpu.MinMagFilter.linear,
     magFilter: gpu.MinMagFilter.linear,
+    mipFilter: gpu.MipFilter.linear,
     widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
   );
@@ -559,11 +560,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     final frame = lighting.planarReflectionsSuppressed
         ? null
         : planarReflectionFrame;
-    // PlanarReflectionInfo: mat4 view_projection + vec4 params (x gate).
+    // PlanarReflectionInfo: mat4 view_projection + vec4 params (x gate, y max LOD).
     final info = Float32List(20);
     if (frame != null) {
       info.setAll(0, frame.viewProjection.storage);
       info[16] = 1.0;
+      info[17] = (frame.texture.mipLevelCount - 1).toDouble();
     }
     pass.bindUniform(
       shader.getUniformSlot('PlanarReflectionInfo'),

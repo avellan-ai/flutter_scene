@@ -343,14 +343,14 @@ String emitFragmentGlsl(
     sb.writeln('uniform sampler2D planar_reflection;');
     sb.writeln('uniform PlanarReflectionInfo {');
     sb.writeln('  mat4 view_projection;');
-    sb.writeln('  vec4 params; // x: a capture is bound this draw');
+    sb.writeln('  vec4 params; // x: capture bound; y: maximum filtered LOD');
     sb.writeln('}');
     sb.writeln('planar_reflection_info;');
     sb.writeln('// The mirrored scene color reflected at this fragment. a is');
     sb.writeln('// 1 when a capture is bound this draw and 0 otherwise (no');
     sb.writeln('// reflector routed one, or the draw is inside a capture);');
     sb.writeln('// fall back to the environment reflection at a == 0.');
-    sb.writeln('vec4 GetPlanarReflection() {');
+    sb.writeln('vec4 GetPlanarReflection(float lod) {');
     sb.writeln('  if (planar_reflection_info.params.x < 0.5) {');
     sb.writeln('    return vec4(0.0);');
     sb.writeln('  }');
@@ -362,7 +362,13 @@ String emitFragmentGlsl(
     sb.writeln('  vec2 uv = vec2(0.5 + 0.5 * clip.x / clip.w,');
     sb.writeln('                 0.5 - 0.5 * clip.y / clip.w);');
     sb.writeln('  uv = clamp(uv, vec2(0.001), vec2(0.999));');
-    sb.writeln('  return vec4(texture(planar_reflection, uv).rgb, 1.0);');
+    sb.writeln('  lod = clamp(lod, 0.0, planar_reflection_info.params.y);');
+    sb.writeln(
+      '  return vec4(textureLod(planar_reflection, uv, lod).rgb, 1.0);',
+    );
+    sb.writeln('}');
+    sb.writeln('vec4 GetPlanarReflection() {');
+    sb.writeln('  return GetPlanarReflection(0.0);');
     sb.writeln('}');
     sb.writeln();
   }

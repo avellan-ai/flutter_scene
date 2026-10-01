@@ -1016,7 +1016,12 @@ base class Scene implements SceneGraph {
         key,
         _PlanarCaptureResources.new,
       );
-      final texture = resources.acquire(width, height);
+      final mipLevels =
+          gpu.gpuContext.doesSupportManuallyMippedTextures &&
+              mipChainsAreSampled
+          ? lead.mipLevelCount.clamp(1, math.max(width, height).bitLength)
+          : 1;
+      final texture = resources.acquire(width, height, mipLevels);
       final reflectedCamera = PlanarReflectionCamera(
         source: camera,
         plane: plane,
@@ -3705,14 +3710,18 @@ class _PlanarCaptureResources {
   // The group's capture target at the requested size, reallocated when the
   // size changes (the old texture is released to finalizers; any in-flight
   // frame object keeps it alive until sampled).
-  gpu.Texture acquire(int width, int height) {
+  gpu.Texture acquire(int width, int height, int mipLevels) {
     var texture = _texture;
-    if (texture == null || _width != width || _height != height) {
+    if (texture == null ||
+        _width != width ||
+        _height != height ||
+        texture.mipLevelCount != mipLevels) {
       texture = gpu.gpuContext.createTexture(
         gpu.StorageMode.devicePrivate,
         width,
         height,
         format: gpu.PixelFormat.r16g16b16a16Float,
+        mipLevelCount: mipLevels,
         enableRenderTargetUsage: true,
         enableShaderReadUsage: true,
       );

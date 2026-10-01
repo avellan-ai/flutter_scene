@@ -8,13 +8,24 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 
-/// Copies the linear HDR scene color into [_output] verbatim, ending a
-/// capture render (environment probes) before any post-processing or the
-/// display-referred chain.
+/// Copies linear HDR color before post-processing or the display transform.
+/// Capture filtering can supply an explicit input, target mip and filter;
+/// the default copies the current scene color at full resolution.
 class SceneColorBlitPass extends RenderGraphPass {
-  SceneColorBlitPass({required gpu.Texture output}) : _output = output;
+  SceneColorBlitPass({
+    required gpu.Texture output,
+    gpu.Texture? input,
+    int outputMipLevel = 0,
+    bool linearFilter = false,
+  }) : _output = output,
+       _input = input,
+       _outputMipLevel = outputMipLevel,
+       _linearFilter = linearFilter;
 
   final gpu.Texture _output;
+  final gpu.Texture? _input;
+  final int _outputMipLevel;
+  final bool _linearFilter;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -41,18 +52,26 @@ class SceneColorBlitPass extends RenderGraphPass {
     widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
     heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
   );
+  static final gpu.SamplerOptions _linearClamp = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
 
   @override
   String get name => 'SceneColorBlitPass';
 
   @override
   void execute(RenderGraphContext context) {
-    final input = context.blackboard.require<gpu.Texture>(
-      kSceneColorBlackboardKey,
-    );
+    final input =
+        _input ??
+        context.blackboard.require<gpu.Texture>(kSceneColorBlackboardKey);
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: _output)),
+      gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(texture: _output, mipLevel: _outputMipLevel),
+      ),
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     renderPass.setColorBlendEnable(false);
@@ -60,7 +79,7 @@ class SceneColorBlitPass extends RenderGraphPass {
     renderPass.bindTexture(
       _fragmentShader.getUniformSlot('source_texture'),
       input,
-      sampler: _nearestClamp,
+      sampler: _linearFilter ? _linearClamp : _nearestClamp,
     );
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
