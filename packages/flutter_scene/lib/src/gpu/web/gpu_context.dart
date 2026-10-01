@@ -254,10 +254,11 @@ base class GpuContext {
     );
   }
 
-  // Framebuffer cache, keyed by the attachment textures. A pass previously
-  // created (and leaked) a framebuffer and ran the synchronous
-  // checkFramebufferStatus round trip every time; render targets recur every
-  // frame, so both now happen once per attachment combination.
+  // Keep recurrent attachment combinations in least-recently-used order.
+  // Reflection mips and the double-buffered post stack can exceed 64 entries;
+  // clearing the whole cache then forces blocking completeness checks every
+  // frame. Evict only the oldest entry when the bounded working set is full.
+  static const int _kMaxCachedFramebuffers = 128;
   final Map<(Texture, int, int, Texture?), web.WebGLFramebuffer>
   _framebufferCache = {};
 
@@ -269,13 +270,14 @@ base class GpuContext {
     web.WebGLFramebuffer Function() create,
   ) {
     final key = (color, mipLevel, slice, depth);
-    final cached = _framebufferCache[key];
-    if (cached != null) return cached;
-    if (_framebufferCache.length >= 64) {
-      for (final fbo in _framebufferCache.values) {
-        _gl.deleteFramebuffer(fbo);
-      }
-      _framebufferCache.clear();
+    final cached = _framebufferCache.remove(key);
+    if (cached != null) {
+      _framebufferCache[key] = cached;
+      return cached;
+    }
+    if (_framebufferCache.length >= _kMaxCachedFramebuffers) {
+      final oldest = _framebufferCache.keys.first;
+      _gl.deleteFramebuffer(_framebufferCache.remove(oldest)!);
     }
     return _framebufferCache[key] = create();
   }
