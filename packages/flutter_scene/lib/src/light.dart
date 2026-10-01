@@ -86,6 +86,11 @@ enum DirectionalShadowFilter {
   /// per tap and interpolates depth tests continuously, giving smooth analog
   /// penumbras without noise or stepping within a 16-sample texture budget.
   bilinearPcf,
+
+  /// One bilinear 2x2 footprint, with four depth comparisons. Keeps narrow
+  /// shadow edges stable without a rotated kernel. Its penumbra is one atlas
+  /// texel; use [bilinearPcf] or [pcss] for broader, world-space softness.
+  bilinear2x2,
 }
 
 /// An infinitely-distant light source (e.g. the sun) that illuminates

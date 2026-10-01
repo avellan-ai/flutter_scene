@@ -174,7 +174,10 @@ float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
   // TODO(flutter_scene): use file-scope const arrays once impellerc/SPIRV-Cross
   // emits valid ES 1.00 array constructors for them.
   float shadow = 0.0;
-  if (filter_index > 2.5) {
+  if (filter_index > 3.5) {
+    shadow = ShadowTapBilinear(vec2(0.0), 0.0, uv, cascade,
+                              inv_count, receiver_depth);
+  } else if (filter_index > 2.5) {
     // 4-tap bilinear PCF: 4 taps x 4 texels = 16 samples total (matching the
     // 16-sample budget), producing continuous analog filtering with zero
     // noise rotation or stepped banding.
