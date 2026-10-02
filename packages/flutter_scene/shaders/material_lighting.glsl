@@ -726,18 +726,26 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // term on bumpy top faces.
   float facing = clamp(geometric_n_dot_l / 0.15, 0.0, 1.0);
 
-  // Sun-shadow visibility (1 lit .. 0 shadowed). The shadow map is only
-  // meaningful for sun-facing surfaces; a back face receives no sun by
-  // definition, so it is treated as fully shadowed (facing = 0) without a
-  // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
-  // and would otherwise stripe the back face with acne.
+  // A thin diffuse-transmitting surface also receives light from behind.
+  // Bias its shadow receiver toward that light-facing side so the opaque
+  // shadow map does not make the leaf's opposite skin shadow itself.
+  float direct_facing = facing;
+  vec3 shadow_receiver_normal = GetWorldNormal();
+  bool back_transmission = false;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  if (material.diffuse_transmission > 0.0 && geometric_n_dot_l < 0.0) {
+    back_transmission = true;
+    direct_facing = clamp(-geometric_n_dot_l / 0.15, 0.0, 1.0);
+    shadow_receiver_normal = -shadow_receiver_normal;
+  }
+#endif
   float shadow = 1.0;
 #if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
     !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
   shadow =
       (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
-       facing > 0.0)
-          ? SampleShadow(v_position, GetWorldNormal())
+       direct_facing > 0.0)
+          ? SampleShadow(v_position, shadow_receiver_normal)
           : 1.0;
 #endif
 #if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
@@ -745,11 +753,15 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // Screen-space contact shadow for the sun, marched by the occlusion pass.
   // Applies whether or not a shadow map is active, grounding small contacts
   // that shadow-map resolution and bias miss.
-  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5) {
+  // The screen-space trace models an opaque front-side receiver. The
+  // light-facing shadow-map receiver handles thin back-side transmission.
+  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5 &&
+      !back_transmission) {
     shadow = min(shadow, ssao_sample.g);
   }
 #endif
   float sun_visibility = facing * shadow;
+  float direct_sun_visibility = direct_facing * shadow;
 
   // When shadow_ambient_strength (radiance_blend.y) is non-zero, the sun's
   // occlusion also darkens the IBL ambient: a sky-baked environment already
@@ -817,10 +829,10 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
     light_context.light_vector = light_vector;
     light_context.color = frag_info.directional_light_color.rgb;
-    light_context.radiance = light_context.color * sun_visibility;
+    light_context.radiance = light_context.color * direct_sun_visibility;
     light_context.direction = -light_vector;
     light_context.distance_attenuation = 1.0;
-    light_context.cone_attenuation = facing;
+    light_context.cone_attenuation = direct_facing;
     light_context.shadow = shadow;
     light_context.type = 0.0;
     light_context.light_row = -1.0;
@@ -845,7 +857,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                                    reflectance, n_dot_v, material.specular,
                                    anisotropic_tangent,
                                    anisotropic_bitangent) *
-             sun_visibility;
+             direct_sun_visibility;
 #endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     coat_direct += EvaluateClearcoatLight(
