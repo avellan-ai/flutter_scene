@@ -233,6 +233,10 @@ String emitFragmentGlsl(
   if (!material.directionalLight) {
     sb.writeln('#define FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT');
   }
+  if (material.directionalShadowFilter ==
+      FmatDirectionalShadowFilter.bilinear2x2) {
+    sb.writeln('#define FLUTTER_SCENE_SHADOW_BILINEAR_2X2');
+  }
   if (lit && material.shadingModel != FmatShadingModel.shadowCatcher) {
     for (final hook in lightingHooksIn(material.fragmentSource)) {
       sb.writeln('#define ${_lightingHookDefines[hook]}');

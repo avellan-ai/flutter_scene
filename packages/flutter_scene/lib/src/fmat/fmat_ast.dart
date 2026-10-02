@@ -75,6 +75,22 @@ enum FmatBlending {
 /// Which triangle faces are culled.
 enum FmatCulling { back, front, none }
 
+/// A material may fix the directional shadow kernel at compile time.
+enum FmatDirectionalShadowFilter {
+  scene('scene'),
+  bilinear2x2('bilinear_2x2');
+
+  const FmatDirectionalShadowFilter(this.token);
+  final String token;
+
+  static FmatDirectionalShadowFilter? fromToken(String token) {
+    for (final value in values) {
+      if (value.token == token) return value;
+    }
+    return null;
+  }
+}
+
 /// The depth test a translucent material's geometry uses.
 enum FmatDepthTest {
   /// Occludes against the opaque scene.
@@ -298,6 +314,7 @@ class FmatMaterial {
     this.sceneColorReach,
     this.environmentLighting = true,
     this.directionalLight = true,
+    this.directionalShadowFilter = FmatDirectionalShadowFilter.scene,
     this.alphaToCoverage = false,
   });
 
@@ -316,6 +333,10 @@ class FmatMaterial {
   /// the light's term inlines a second copy of `Light()` that some drivers
   /// take many times longer to compile.
   final bool directionalLight;
+
+  /// `scene` follows the light at runtime. A fixed kernel omits unused shadow
+  /// algorithms from this material and ignores the light's filter selection.
+  final FmatDirectionalShadowFilter directionalShadowFilter;
 
   /// Whether an opaque material turns its surface alpha into MSAA coverage
   /// (`alpha_to_coverage:`, default false), for crisp, sort-free cutouts

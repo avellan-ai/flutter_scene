@@ -575,6 +575,7 @@ FmatMaterial _build(
     'scene_color_reach',
     'environment_lighting',
     'directional_light',
+    'directional_shadow_filter',
     'alpha_to_coverage',
   };
   for (final key in tree.keys) {
@@ -681,6 +682,29 @@ FmatMaterial _build(
       '`shading_model: lit`.',
       fileName: fileName,
     );
+  }
+
+  final shadowFilterValue = tree['directional_shadow_filter'];
+  var directionalShadowFilter = FmatDirectionalShadowFilter.scene;
+  if (shadowFilterValue != null) {
+    final parsed = shadowFilterValue is _Ident
+        ? FmatDirectionalShadowFilter.fromToken(shadowFilterValue.name)
+        : null;
+    if (parsed == null) {
+      throw FmatException(
+        '`directional_shadow_filter` must be `scene` or `bilinear_2x2`.',
+        fileName: fileName,
+      );
+    }
+    if (domain != FmatDomain.surface ||
+        shadingModel == FmatShadingModel.unlit ||
+        !directionalLight) {
+      throw FmatException(
+        '`directional_shadow_filter` requires a lit directional surface.',
+        fileName: fileName,
+      );
+    }
+    directionalShadowFilter = parsed;
   }
 
   // `depth_test` picks the translucent pass's depth comparison. `always` is for
@@ -951,6 +975,7 @@ FmatMaterial _build(
     sceneColorReach: sceneColorReach,
     environmentLighting: environmentLighting,
     directionalLight: directionalLight,
+    directionalShadowFilter: directionalShadowFilter,
     alphaToCoverage: alphaToCoverage,
   );
 }

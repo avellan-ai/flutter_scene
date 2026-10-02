@@ -128,6 +128,10 @@ float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
   // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
   highp float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
 
+#ifdef FLUTTER_SCENE_SHADOW_BILINEAR_2X2
+  float shadow = ShadowTapBilinear(vec2(0.0), 0.0, uv, cascade,
+                                  inv_count, receiver_depth);
+#else
   // Select the tap positions without duplicating the texture samples in both
   // branches. Duplicating both kernels here expands to 33 samples per cascade
   // in the generated GLES source even though the choice is uniform.
@@ -201,6 +205,7 @@ float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
     }
     shadow = lit / float(sample_count);
   }
+#endif
 
   // Only the last cascade has a real outer edge (inner cascades hand
   // off to the next), so fade just it back to lit at the boundary.
