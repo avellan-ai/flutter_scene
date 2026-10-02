@@ -13,6 +13,10 @@ uniform FrameInfo {
   float enable_skinning;
   float joint_texture_size;
   float depth_bias;
+  // The draw's depth-layer offset (xy) and its slope-scaled layer (z) and
+  // tie-break (w) offsets; a skinned draw is never instanced, so it has no
+  // instance rank. See ApplySlopedDepthOffset.
+  vec4 depth_offset;
 }
 frame_info;
 
@@ -124,7 +128,12 @@ void main() {
   vec3 draw_position = ApplyDepthBias(
       vertex.world_position, frame_info.camera_transform,
       frame_info.camera_position, frame_info.depth_bias);
-  gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
+  vec4 clip_position = frame_info.camera_transform * vec4(draw_position, 1.0);
+  gl_Position = ApplySlopedDepthOffset(
+      clip_position, vec4(frame_info.depth_offset.xy, 0.0, 0.0),
+      vec4(frame_info.depth_offset.z, 0.0, frame_info.depth_offset.w, 0.0),
+      vec3(0.0), frame_info.camera_transform, draw_position,
+      frame_info.camera_position, vertex.world_normal);
   v_viewvector = frame_info.camera_position - vertex.world_position;
   // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);

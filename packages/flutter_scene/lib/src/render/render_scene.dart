@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
@@ -277,6 +278,7 @@ class RenderItem {
   /// or instance change. Static groups pay this once during setup.
   @internal
   void refreshInstanceData() {
+    _depthFitInstanceBounds = null;
     final instances = instanceTransforms;
     final bounds = geometry.localBounds;
     final colors = instanceColors;
@@ -405,6 +407,154 @@ class RenderItem {
         ? null
         : visible;
     return visible.isNotEmpty;
+  }
+
+  // World-space instance AABBs for the near-plane fit when instance culling
+  // keeps none, built on demand and dropped by [refreshInstanceData].
+  Float32List? _depthFitInstanceBounds;
+
+  // Instanced items with more instances than this fall back to their
+  // aggregate bounds in the near-plane fit, bounding its per-frame cost.
+  // Dense sets (grass, debris) hug the ground, where the aggregate bound is
+  // already close to the per-instance one.
+  static const int _maxDepthFitInstances = 2048;
+
+  /// A lower bound on the planar view depth of any of this item's visible
+  /// points (see [aabbDepthLowerBound]). An instanced item whose aggregate
+  /// bounds could set a new [best] is refined per instance, since a spread
+  /// set (a skyline ring around the camera) has aggregate bounds far nearer
+  /// than any instance. Infinity when the item draws nothing in [frustum];
+  /// the search stops early once a bound reaches [floor].
+  @internal
+  double depthLowerBound(
+    Frustum frustum,
+    Vector3 eye,
+    Vector3 forward,
+    double cosHalfAngle,
+    double best, {
+    double floor = 0.0,
+  }) {
+    final aggregate = worldBounds;
+    if (aggregate == null) return 0.0;
+    final whole = aggregate.depthLowerBound(eye, forward, cosHalfAngle);
+    final instances = instanceTransforms;
+    final localBounds = geometry.localBounds;
+    if (whole >= best ||
+        instances == null ||
+        localBounds == null ||
+        instances.length > _maxDepthFitInstances) {
+      return whole;
+    }
+    final packed = _packedInstanceBounds(instances, localBounds);
+    var nearest = double.infinity;
+    for (var i = 0; i < instances.length; i++) {
+      final offset = i * 6;
+      if (_outsidePlane(packed, offset, frustum.plane0) ||
+          _outsidePlane(packed, offset, frustum.plane1) ||
+          _outsidePlane(packed, offset, frustum.plane2) ||
+          _outsidePlane(packed, offset, frustum.plane3) ||
+          _outsidePlane(packed, offset, frustum.plane4) ||
+          _outsidePlane(packed, offset, frustum.plane5)) {
+        continue;
+      }
+      final bound = aabbDepthLowerBound(
+        packed[offset],
+        packed[offset + 1],
+        packed[offset + 2],
+        packed[offset + 3],
+        packed[offset + 4],
+        packed[offset + 5],
+        eye.x,
+        eye.y,
+        eye.z,
+        forward.x,
+        forward.y,
+        forward.z,
+        cosHalfAngle,
+      );
+      if (bound < nearest) {
+        nearest = bound;
+        if (nearest <= floor) break;
+      }
+    }
+    return nearest;
+  }
+
+  // World-space AABBs of [instances], six floats each: the culling cache
+  // when instance culling keeps one, else built on demand and kept until
+  // [refreshInstanceData].
+  Float32List _packedInstanceBounds(
+    List<Matrix4> instances,
+    Aabb3 localBounds,
+  ) {
+    final culled = _instanceWorldBounds;
+    if (culled != null && culled.length == instances.length * 6) {
+      return culled;
+    }
+    final cached = _depthFitInstanceBounds;
+    if (cached != null && cached.length == instances.length * 6) {
+      return cached;
+    }
+    final packed = Float32List(instances.length * 6);
+    for (var i = 0; i < instances.length; i++) {
+      _instanceWorldScratch
+        ..setFrom(worldTransform)
+        ..multiply(instances[i]);
+      _instanceAabbScratch
+        ..copyFrom(localBounds)
+        ..transform(_instanceWorldScratch);
+      final offset = i * 6;
+      packed[offset] = _instanceAabbScratch.min.x;
+      packed[offset + 1] = _instanceAabbScratch.min.y;
+      packed[offset + 2] = _instanceAabbScratch.min.z;
+      packed[offset + 3] = _instanceAabbScratch.max.x;
+      packed[offset + 4] = _instanceAabbScratch.max.y;
+      packed[offset + 5] = _instanceAabbScratch.max.z;
+    }
+    return _depthFitInstanceBounds = packed;
+  }
+
+  /// How far along the ray from [origin] in unit [direction] this item's
+  /// bounds start (each instance's for an instanced item), zero from inside,
+  /// or null when the ray misses them. For diagnostics that name where on
+  /// screen something happens.
+  @internal
+  double? rayBoundsDistance(Vector3 origin, Vector3 direction) {
+    final aggregate = worldBounds;
+    if (aggregate == null) return null;
+    final instances = instanceTransforms;
+    final localBounds = geometry.localBounds;
+    final packed = instances == null || localBounds == null
+        ? Float32List.fromList([
+            aggregate.min.x,
+            aggregate.min.y,
+            aggregate.min.z,
+            aggregate.max.x,
+            aggregate.max.y,
+            aggregate.max.z,
+          ])
+        : _packedInstanceBounds(instances, localBounds);
+    var nearest = double.infinity;
+    for (var offset = 0; offset < packed.length; offset += 6) {
+      var near = 0.0;
+      var far = double.infinity;
+      for (var axis = 0; axis < 3 && near <= far; axis++) {
+        final o = origin[axis];
+        final d = direction[axis];
+        final lo = packed[offset + axis];
+        final hi = packed[offset + axis + 3];
+        if (d.abs() < 1e-12) {
+          if (o < lo || o > hi) far = -1.0;
+          continue;
+        }
+        final t0 = (lo - o) / d;
+        final t1 = (hi - o) / d;
+        near = math.max(near, math.min(t0, t1));
+        far = math.min(far, math.max(t0, t1));
+      }
+      if (near <= far && near < nearest) nearest = near;
+    }
+    return nearest.isFinite ? nearest : null;
   }
 
   static bool _outsidePlane(Float32List bounds, int offset, Plane plane) {
@@ -717,6 +867,10 @@ class RenderScene {
 
   Camera? _lastViewCamera;
 
+  /// The camera of the first on-screen view the last frame rendered (or of
+  /// its first view when all render offscreen), or null before a frame.
+  Camera? get lastViewCamera => _lastViewCamera;
+
   /// Records the views a frame renders, so [listenerCamera] can follow the
   /// first on-screen one (or the first view when all render offscreen).
   void recordRenderedViews(List<RenderView> views) {
@@ -843,6 +997,72 @@ class RenderScene {
     return _bvh.itemCount - visited;
   }
 
+  /// The smallest lower bound on planar view depth, along [forward] from
+  /// [eye], over the items drawn into a perspective view (layers in
+  /// [layerMask]) through [frustum], whose corner ray makes an angle with
+  /// forward of cosine [cosHalfAngle]. A view can raise its near plane to
+  /// this without clipping anything it draws.
+  ///
+  /// [nearest] is the item that set the bound, so a caller can name what
+  /// pins the plane (an unbounded item, or one whose bounds hold the eye).
+  ///
+  /// The search stops as soon as the bound reaches [floor] (a depth below
+  /// which the caller cannot use it), which keeps it cheap when something is
+  /// close to the camera.
+  ({double depth, RenderItem? nearest}) nearestVisibleDepth({
+    required Frustum frustum,
+    required Vector3 eye,
+    required Vector3 forward,
+    required double cosHalfAngle,
+    int layerMask = kRenderLayerAll,
+    List<Plane> additionalPlanes = const [],
+    double floor = 0.0,
+  }) {
+    RenderItem? nearest;
+    var best = double.infinity;
+    for (final item in _alwaysVisible) {
+      if (!item.drawsColor || (item.layers & layerMask) == 0) continue;
+      final bound = item.depthLowerBound(
+        frustum,
+        eye,
+        forward,
+        cosHalfAngle,
+        best,
+        floor: floor,
+      );
+      if (bound < best) {
+        best = bound;
+        nearest = item;
+        if (best <= floor) return (depth: best, nearest: nearest);
+      }
+    }
+    best = _bvh.nearestBound(
+      frustum,
+      eye,
+      forward,
+      cosHalfAngle,
+      (item, currentBest) {
+        if (!item.drawsColor || (item.layers & layerMask) == 0) {
+          return double.infinity;
+        }
+        final bound = item.depthLowerBound(
+          frustum,
+          eye,
+          forward,
+          cosHalfAngle,
+          currentBest,
+          floor: floor,
+        );
+        if (bound < currentBest) nearest = item;
+        return bound;
+      },
+      additionalPlanes: additionalPlanes,
+      best: best,
+      floor: floor,
+    );
+    return (depth: best, nearest: nearest);
+  }
+
   /// Collects material inputs requested by this view's frustum candidates.
   Set<RenderInput> collectMaterialInputs(
     Frustum frustum, {
@@ -888,4 +1108,23 @@ class RenderScene {
     }
     return inputs;
   }
+}
+
+extension on Aabb3 {
+  double depthLowerBound(Vector3 eye, Vector3 forward, double cosHalfAngle) =>
+      aabbDepthLowerBound(
+        min.x,
+        min.y,
+        min.z,
+        max.x,
+        max.y,
+        max.z,
+        eye.x,
+        eye.y,
+        eye.z,
+        forward.x,
+        forward.y,
+        forward.z,
+        cosHalfAngle,
+      );
 }

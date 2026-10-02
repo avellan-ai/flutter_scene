@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/mesh_draw.dart';
@@ -27,6 +28,7 @@ import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
 import 'package:flutter_scene/src/render/render_stats.dart';
+import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/shaders.dart';
@@ -602,9 +604,13 @@ base class SceneEncoder {
        _debugView = debugView,
        _primaryView = primaryView {
     currentSceneEncoderViewport = _dimensions;
-    _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
+    _raster = depthRasterOf(_camera);
+    _pixelSlope = pixelDepthSlopeOf(_camera, _dimensions);
+    _pixelScale = pixelWorldScaleOf(_camera, _dimensions);
+    _cameraTransform =
+        cameraTransform ?? rasterViewTransformOf(_camera, _dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
-    frustum = Frustum.matrix(_cameraTransform);
+    frustum = cullingFrustumOf(_camera, _dimensions);
     // A degenerate projection has no screen-size metric, so LOD nodes draw
     // their highest-detail level.
     final projection = ProjectionParams.of(_camera.projection, _dimensions);
@@ -613,10 +619,20 @@ base class SceneEncoder {
     // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
-    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
   }
 
   final Camera _camera;
+
+  // How this view rasterizes depth (reversed or not, fitted near), shared
+  // with every other pass that draws into its depth buffers.
+  late final DepthRaster _raster;
+
+  // The view's pixelDepthSlope, for slope-scaled depth offsets.
+  late final double _pixelSlope;
+
+  // The view's pixelWorldScale, for the depth gap debug view.
+  late final double _pixelScale;
 
   // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
   final bool _primaryView;
@@ -640,6 +656,8 @@ base class SceneEncoder {
   // Not final because opaque and translucent draws can use separate passes.
   gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
+  // The view-projection draws rasterize with (see DepthRaster); culling uses
+  // [frustum], built from the standard mapping.
   late final Matrix4 _cameraTransform;
 
   // The transform the display-referred layer draws with, when it differs from
@@ -688,6 +706,7 @@ base class SceneEncoder {
   gpu.Shader? _boundMaterialVertex;
   gpu.Shader? _boundFrameInfoShader;
   double _boundFrameInfoDepthBias = double.nan;
+  int _boundFrameInfoDepthKey = -1;
   double _boundMaterialFade = double.nan;
   int _boundMaterialLightOffset = -1;
   int _boundMaterialLightCount = -1;
@@ -1027,6 +1046,7 @@ base class SceneEncoder {
     _boundMaterialVertex = null;
     _boundFrameInfoShader = null;
     _boundFrameInfoDepthBias = double.nan;
+    _boundFrameInfoDepthKey = -1;
     _boundMaterialFade = double.nan;
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
@@ -1098,6 +1118,8 @@ base class SceneEncoder {
       view,
       objectSeed: item == null ? 0 : identityHashCode(item.sourceNode ?? item),
       materialSeed: identityHashCode(material),
+      raster: _raster,
+      pixelScale: _pixelScale,
     );
     _renderPass.bindUniform(
       slot,
@@ -1166,13 +1188,21 @@ base class SceneEncoder {
     gpu.Shader? materialVertex,
   ) {
     final depthBias = material.depthBias;
+    final depthKey = _depthOffsetKey(material);
+    setCurrentDrawDepthOffset(
+      _raster,
+      material.depthLayer,
+      material.tieBreakRank,
+      pixelSlope: _pixelSlope,
+    );
     geometry.useVertexAttributes(material.vertexAttributesFor(materialVertex));
     // Morphed geometry takes the full bind, which also binds its morph stage.
     if (geometry is UnskinnedGeometry && geometry.morphTargets == null) {
       geometry.bindGeometryBuffers(_renderPass);
       final shader = materialVertex ?? geometry.vertexShader;
       if (!identical(_boundFrameInfoShader, shader) ||
-          _boundFrameInfoDepthBias != depthBias) {
+          _boundFrameInfoDepthBias != depthBias ||
+          _boundFrameInfoDepthKey != depthKey) {
         bindUnskinnedFrameInfo(
           _renderPass,
           _transientsBuffer,
@@ -1183,6 +1213,7 @@ base class SceneEncoder {
         );
         _boundFrameInfoShader = shader;
         _boundFrameInfoDepthBias = depthBias;
+        _boundFrameInfoDepthKey = depthKey;
       }
     } else {
       geometry.bind(
@@ -1197,7 +1228,16 @@ base class SceneEncoder {
       // The full bind rebinds FrameInfo, possibly on the cached shader.
       _boundFrameInfoShader = null;
       _boundFrameInfoDepthBias = double.nan;
+      _boundFrameInfoDepthKey = -1;
     }
+  }
+
+  // Identifies the depth offset [material] draws with under [_raster]: its
+  // layer, plus its tie-break rank when the tie-break applies to it.
+  int _depthOffsetKey(Material material) {
+    final layer = material.depthLayer;
+    final rank = _raster.tieBreak && layer == 0 ? material.tieBreakRank : 0;
+    return (layer + kMaxDepthLayer) * 4 + rank;
   }
 
   void _bindPackedInstances(Float32List packed, int slot) {
@@ -2029,6 +2069,7 @@ base class SceneEncoder {
       _boundMaterialVertex = null;
       _boundFrameInfoShader = null;
       _boundFrameInfoDepthBias = double.nan;
+      _boundFrameInfoDepthKey = -1;
       _boundMaterialFade = double.nan;
       _boundMaterialLightOffset = -1;
       _boundMaterialLightCount = -1;
@@ -2037,7 +2078,7 @@ base class SceneEncoder {
       _boundPrimitiveType = null;
       EngineLightingUniforms.invalidateBindMemo();
     }
-    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
     final encodeWatch = profileRendering ? (Stopwatch()..start()) : null;
     _renderPass.setDepthWriteEnable(false);
     _renderPass.setColorBlendEnable(true);
@@ -2057,7 +2098,9 @@ base class SceneEncoder {
       _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
       // Set per record, like the depth write above, so a projection volume
       // drawn with `always` cannot leak that test into the next draw.
-      _renderPass.setDepthCompareOperation(record.material.depthCompare);
+      _renderPass.setDepthCompareOperation(
+        _raster.compare(record.material.depthCompare),
+      );
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;
@@ -2162,6 +2205,7 @@ base class SceneEncoder {
     _boundMaterialVertex = null;
     _boundFrameInfoShader = null;
     _boundFrameInfoDepthBias = double.nan;
+    _boundFrameInfoDepthKey = -1;
     _boundMaterialFade = double.nan;
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
@@ -2184,7 +2228,9 @@ base class SceneEncoder {
     );
 
     for (final record in _displayReferredRecords) {
-      _renderPass.setDepthCompareOperation(record.material.depthCompare);
+      _renderPass.setDepthCompareOperation(
+        _raster.compare(record.material.depthCompare),
+      );
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart' show Matrix4, Vector3;
 
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -266,17 +267,58 @@ abstract class Material {
   /// culling so the geometry is visible from both sides; otherwise back faces
   /// are culled. Defaults to false. The runtime importer sets it from the glTF
   /// material.
+  ///
+  /// Turn it on only for geometry that needs it: culling is what hides the
+  /// coincident faces of pieces placed back to back, which flicker against
+  /// each other once both sides draw.
   bool doubleSided = false;
 
   /// World-space offset toward the camera used for coplanar surface details.
   /// Positive values keep an overlay in front of its supporting surface
   /// without modifying its node transform. Zero and negative values leave the
-  /// draw position unchanged. A fixed world offset provides fewer depth-buffer
-  /// units as camera distance grows, so distant coplanar surfaces may need a
-  /// larger value.
-  // TODO(depth-bias-distance): add a distance or slope-scaled mode for decals
-  // that must remain separated across a large depth range.
+  /// draw position unchanged.
+  ///
+  /// A fixed world offset buys fewer depth-buffer steps as camera distance
+  /// grows, so an overlay that holds up close can flicker far away. Prefer
+  /// [depthLayer], which holds at every distance. Billboards, sprites, line
+  /// segments, and splats ignore this; they honor [depthLayer].
   double depthBias = 0.0;
+
+  /// Which surface wins where this material's geometry and another's lie in
+  /// the same plane. A surface with a higher layer draws over coplanar
+  /// surfaces with a lower one, at any distance and on every backend.
+  ///
+  /// Use it for overlays that sit on a surface (a sign or screen on a wall,
+  /// a road marking, a decal quad, a rug): place the overlay at the surface or
+  /// slightly in front of it and give it layer 1, an overlay on that overlay
+  /// layer 2, and so on. Negative layers let a ground yield to everything
+  /// placed on it. Two different materials at the same layer that overlap in
+  /// one plane flicker (z-fighting), so give them different layers or keep
+  /// them apart.
+  ///
+  /// Each layer moves the surface toward the camera in the vertex stage by a
+  /// quarter of a pixel's worth of its own depth slope plus a few
+  /// depth-buffer steps (more far from the world origin, where float rounding
+  /// is coarser). That beats the rasterizer's rounding on a surface seen at a
+  /// grazing angle, costs nothing per fragment, and never moves anything on
+  /// screen by more than a fraction of a pixel. Curved layered meshes get a
+  /// larger offset near their silhouettes. Clamped to `-8..8`. Shadow maps
+  /// ignore it. Defaults to 0.
+  int get depthLayer => _depthLayer;
+  set depthLayer(int value) {
+    _depthLayer = value.clamp(-kMaxDepthLayer, kMaxDepthLayer);
+  }
+
+  int _depthLayer = 0;
+
+  /// A rank in `0..2` from this material's creation order, which the
+  /// automatic coplanar tie-break (`Scene.coplanarTieBreak`) turns into a
+  /// small depth offset. Consecutively created materials always differ.
+  @internal
+  final int tieBreakRank = _nextTieBreakRank();
+
+  static int _tieBreakCounter = 0;
+  static int _nextTieBreakRank() => _tieBreakCounter++ % 3;
 
   /// Per-draw level-of-detail cross-fade coverage, set by the encoder right
   /// before [bind] and written into the material's `FragInfo.fade`. 1 draws

@@ -36,7 +36,26 @@ base class GpuContext {
     if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
       _maxSupportedAnisotropy = _integerParameter(0x84FF) ?? 1;
     }
+    // Clip-space depth in [0, 1], as Metal and Vulkan rasterize it. The
+    // bundles' GLES shaders end by remapping z to [-1, 1] for core GL, which
+    // the loader strips while this is on (see stripClipSpaceDepthRemap); with
+    // both, a float depth buffer stores clip depth directly, so reversed
+    // depth keeps its precision. Without the extension the remap stays and
+    // depth is 24-bit, which renders the same with standard precision.
+    final clipControl =
+        _gl.getExtension('EXT_clip_control') as _ExtClipControl?;
+    if (clipControl != null) {
+      // LOWER_LEFT_EXT keeps the default origin, ZERO_TO_ONE_EXT the range.
+      clipControl.clipControlEXT(0x8CA1, 0x935F);
+      _clipDepthZeroToOne = true;
+    }
   }
+
+  bool _clipDepthZeroToOne = false;
+
+  /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
+  /// shaders run without their `[-1, 1]` depth remap.
+  bool get clipDepthZeroToOne => _clipDepthZeroToOne;
 
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
@@ -64,6 +83,8 @@ base class GpuContext {
 
   PixelFormat get defaultStencilFormat => PixelFormat.s8UInt;
 
+  // Forward depth (shadow maps, masks) gains nothing from float, so only
+  // reversedDepthStencilFormat pays for it.
   PixelFormat get defaultDepthStencilFormat => PixelFormat.d24UnormS8Uint;
 
   int get minimumUniformByteAlignment => 256;
@@ -409,6 +430,14 @@ bool writeGeometryData(
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
 
+/// The depth-stencil format for passes that rasterize reversed depth (near
+/// at 1, far at 0): float while EXT_clip_control puts clip depth in [0, 1],
+/// else the context default, since under the `[-1, 1]` remap a float buffer
+/// holds no more than 24 bits would.
+PixelFormat get reversedDepthStencilFormat => gpuContext.clipDepthZeroToOne
+    ? PixelFormat.d32FloatS8UInt
+    : gpuContext.defaultDepthStencilFormat;
+
 /// The buffers one mesh upload needs: [vertexBytes] of vertex streams and
 /// [indexBytes] of indices. On web they are two role-typed buffers, because
 /// WebGL2 cannot share one buffer between the two roles and sharing one
@@ -425,4 +454,9 @@ createGeometryBuffers(int vertexBytes, int indexBytes) {
         : gpuContext.createTypedDeviceBuffer(indexBytes, index: true),
     indexBaseOffset: 0,
   );
+}
+
+/// `EXT_clip_control`, which sets the clip-space origin and depth range.
+extension type _ExtClipControl._(JSObject _) implements JSObject {
+  external void clipControlEXT(int origin, int depth);
 }

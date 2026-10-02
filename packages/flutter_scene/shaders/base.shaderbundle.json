@@ -115,6 +115,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_mask.frag"
   },
+  "MaskMaskedFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_mask_masked.frag"
+  },
   "DebugSurfaceFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_debug_surface.frag"
@@ -122,6 +126,10 @@
   "OutlineFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_outline.frag"
+  },
+  "DepthConflictOverlayFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_depth_conflict_overlay.frag"
   },
   "GodRaysFragment": {
     "type": "fragment",

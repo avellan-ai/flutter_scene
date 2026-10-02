@@ -45,6 +45,7 @@ class SmokeScene {
     this.warmupFrames = 0,
     this.fullCoverage = false,
     this.colorPassCounters,
+    this.maxDepthConflictPixels,
   });
 
   final String id;
@@ -68,6 +69,10 @@ class SmokeScene {
   /// Whether the scene geometry completely covers the viewport, meaning corners
   /// are geometry rather than the background clear color.
   final bool fullCoverage;
+
+  /// When set, the scene is probed for depth conflicts (z-fighting) after the
+  /// capture, and at most this many probe pixels may change hands.
+  final int? maxDepthConflictPixels;
 }
 
 /// The fixed three-quarter view shared by the scenes.
@@ -962,16 +967,20 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         );
       }
 
+      // The back wall spans the full outer width and the side walls stop at
+      // its front face, so the walls abut rather than overlap. Overlapping
+      // corners would put two tops in one plane, which flicker (z-fighting)
+      // and resolve differently from one depth setup to the next.
       box(vm.Vector3(3.4, 0.3, 3.4), vm.Vector3(0, -0.15, 0), white);
-      box(vm.Vector3(3.4, 2.0, 0.3), vm.Vector3(0, 1.0, -1.65), white);
+      box(vm.Vector3(3.6, 2.0, 0.3), vm.Vector3(0, 1.0, -1.65), white);
       box(
-        vm.Vector3(0.3, 2.0, 3.4),
-        vm.Vector3(-1.65, 1.0, 0),
+        vm.Vector3(0.3, 2.0, 3.2),
+        vm.Vector3(-1.65, 1.0, 0.1),
         matte(0.02, 0.02, 0.02, emissive: vm.Vector4(14.0, 0.45, 0.3, 1.0)),
       );
       box(
-        vm.Vector3(0.3, 2.0, 3.4),
-        vm.Vector3(1.65, 1.0, 0),
+        vm.Vector3(0.3, 2.0, 3.2),
+        vm.Vector3(1.65, 1.0, 0.1),
         matte(0.02, 0.02, 0.02, emissive: vm.Vector4(0.15, 4.0, 0.28, 1.0)),
       );
       box(vm.Vector3(0.7, 1.1, 1.1), vm.Vector3(0, 0.55, -0.2), white);
@@ -2180,6 +2189,106 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Overlays flush on their surfaces at depth layer 1 (a screen on its
+  // backing, road paint on a long ground plane seen at a grazing angle),
+  // window bands 4 cm proud of towers 150 m away, and an alpha-masked patch
+  // on the road that shows nothing, under the engine's depth defaults. The
+  // probe must find nothing fighting on any backend.
+  SmokeScene(
+    'depth_layering',
+    () {
+      UnlitMaterial flat(double r, double g, double b, {int layer = 0}) =>
+          UnlitMaterial()
+            ..baseColorFactor = vm.Vector4(r, g, b, 1)
+            ..depthLayer = layer;
+      Node box(vm.Vector3 size, UnlitMaterial material, vm.Vector3 at) =>
+          Node(mesh: Mesh(CuboidGeometry(size), material))..position = at;
+      final scene = Scene();
+      scene.add(
+        Node(
+          name: 'road',
+          mesh: Mesh(
+            PlaneGeometry(width: 12, depth: 400),
+            flat(0.22, 0.22, 0.24),
+          ),
+        )..position = vm.Vector3(0, 0, 195),
+      );
+      // An opaque-pass cutout fully cut away by its vertex alpha, so the
+      // probe must test its coverage, not its quad.
+      scene.add(
+        Node(
+          name: 'cutout',
+          mesh: Mesh(
+            MeshGeometry.fromArrays(
+              positions: Float32List.fromList([
+                -2, 0, -2, -2, 0, 2, 2, 0, 2, 2, 0, -2, //
+              ]),
+              colors: Float32List.fromList([
+                for (var i = 0; i < 4; i++) ...[1.0, 0.0, 0.0, 0.0],
+              ]),
+              indices: const [0, 1, 2, 0, 2, 3],
+            ),
+            PhysicallyBasedMaterial()..alphaMode = AlphaMode.mask,
+          ),
+        )..position = vm.Vector3(-3, 0, 14),
+      );
+      final paint = flat(0.95, 0.92, 0.8, layer: 1);
+      for (var z = 2.0; z < 200; z += 6) {
+        scene.add(
+          Node(
+            name: 'paint',
+            mesh: Mesh(PlaneGeometry(width: 0.25, depth: 3), paint),
+          )..position = vm.Vector3(0, 0, z),
+        );
+      }
+      scene.add(
+        box(vm.Vector3(6, 3, 0.3), flat(0.02, 0.02, 0.02), vm.Vector3(0, 4, 24))
+          ..name = 'backing',
+      );
+      scene.add(
+        Node(
+            name: 'screen',
+            mesh: Mesh(
+              PlaneGeometry(width: 5.4, depth: 2.4),
+              flat(0.95, 0.3, 0.6, layer: 1),
+            ),
+          )
+          ..position = vm.Vector3(0, 4, 24 - 0.15)
+          ..rotation = vm.Quaternion.axisAngle(
+            vm.Vector3(1, 0, 0),
+            -math.pi / 2,
+          ),
+      );
+      final tower = flat(0.12, 0.12, 0.18);
+      final band = flat(1.0, 0.7, 0.3);
+      for (var i = 0; i < 6; i++) {
+        final x = -45.0 + i * 18;
+        final height = 20.0 + (i % 3) * 8;
+        scene.add(
+          box(vm.Vector3(12, height, 12), tower, vm.Vector3(x, height / 2, 150))
+            ..name = 'tower',
+        );
+        scene.add(
+          box(
+            vm.Vector3(12.08, 0.8, 12.08),
+            band,
+            vm.Vector3(x, height * 0.6, 150),
+          )..name = 'band',
+        );
+      }
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(1.2, 2.0, 0),
+          target: vm.Vector3(0, 4.5, 40),
+          fovRadiansY: 50 * vm.degrees2Radians,
+          fovFar: 500,
+        ),
+      );
+    },
+    fullCoverage: true,
+    maxDepthConflictPixels: 32,
+  ),
   // The skinned tube with its weights summing to 0.98, placed 3 km from the
   // origin. A joint matrix carries the model's world position, so an
   // unnormalized weight sum pulls every vertex toward the origin by 2% of
